@@ -4,14 +4,16 @@ export interface Coordinates {
 }
 
 export interface FiboPrompt {
-  camera: {
-    lens: string;
-    view: string;
-    aperture?: string;
-  };
-  lighting: {
-    direction: string;
-    style: string;
+  structured_prompt: {
+    camera: {
+      lens: string;
+      view: string;
+      aperture: string; // Made required for the slider
+    };
+    lighting: {
+      direction: string;
+      style: string;
+    };
   };
   prompt: string;
 }

@@ -16,10 +16,14 @@ export default function App() {
   // State
   const [cameraPos, setCameraPos] = useState<Coordinates>(INITIAL_CAMERA);
   const [lightPos, setLightPos] = useState<Coordinates>(INITIAL_LIGHT);
+  const [aperture, setAperture] = useState<string>("f/5.6");
   const [prompt, setPrompt] = useState<string>("");
+  
   const [fiboData, setFiboData] = useState<FiboPrompt>({
-    camera: { lens: "50mm", view: "Front" },
-    lighting: { direction: "Front", style: "Soft" },
+    structured_prompt: {
+      camera: { lens: "50mm", view: "Front", aperture: "f/5.6" },
+      lighting: { direction: "Front", style: "Soft" }
+    },
     prompt: ""
   });
   
@@ -29,12 +33,13 @@ export default function App() {
   // Render State
   const [renderStatus, setRenderStatus] = useState<RenderResult['status']>('idle');
   const [renderedImage, setRenderedImage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Recalculate JSON whenever positions change
+  // Recalculate JSON whenever positions or params change
   useEffect(() => {
-    const data = calculateFiboParams(cameraPos, lightPos, prompt);
+    const data = calculateFiboParams(cameraPos, lightPos, prompt, aperture);
     setFiboData(data);
-  }, [cameraPos, lightPos, prompt]);
+  }, [cameraPos, lightPos, prompt, aperture]);
 
   // Handler: Gemini Director
   const handleAgentAction = async () => {
@@ -56,46 +61,70 @@ export default function App() {
   // Handler: Render Image
   const handleRender = async () => {
     setRenderStatus('generating');
+    setErrorMessage(null);
     try {
       const imageUrl = await generateImage(fiboData);
       setRenderedImage(imageUrl);
       setRenderStatus('complete');
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
       setRenderStatus('error');
+      setErrorMessage(e.message || "Rendering failed");
     }
   };
+
+  const hasGeminiKey = !!process.env.API_KEY;
+  const hasReplicateKey = !!(process.env.REPLICATE_API_TOKEN || process.env.NEXT_PUBLIC_REPLICATE_API_TOKEN);
 
   return (
     <div className="flex h-screen w-full bg-studio-bg text-white font-sans overflow-hidden">
       
       {/* Left Sidebar: Matrix View (JSON) */}
-      <MatrixView data={fiboData} />
+      <MatrixView 
+        data={fiboData} 
+        aperture={aperture}
+        setAperture={setAperture}
+      />
       
       {/* Center: Main Studio Canvas */}
-      <main className="flex-1 relative">
+      <main className="flex-1 relative h-full flex flex-col">
         {/* Top Header */}
         <div className="absolute top-0 left-0 w-full p-4 z-20 pointer-events-none flex justify-between items-start">
           <div>
-            <h1 className="text-2xl font-bold tracking-tighter text-white">LUMINA</h1>
-            <p className="text-xs text-neutral-500 font-mono tracking-widest">SPATIAL PROMPTING INTERFACE</p>
+            <h1 className="text-2xl font-bold tracking-tighter text-white drop-shadow-md">LUMINA</h1>
+            <p className="text-xs text-neutral-500 font-mono tracking-widest drop-shadow-md">SPATIAL PROMPTING INTERFACE</p>
           </div>
           
-          <div className="text-right pointer-events-auto">
-             {!process.env.API_KEY && (
-               <div className="bg-red-900/50 border border-red-500 text-red-200 px-3 py-1 rounded text-xs">
-                 Missing API_KEY in env
+          <div className="text-right pointer-events-auto flex flex-col gap-2 items-end">
+             {!hasGeminiKey && (
+               <div className="bg-red-900/50 border border-red-500 text-red-200 px-3 py-1 rounded text-xs backdrop-blur-md">
+                 Missing Gemini API Key
+               </div>
+             )}
+             {!hasReplicateKey && (
+               <div className="bg-yellow-900/50 border border-yellow-500 text-yellow-200 px-3 py-1 rounded text-xs backdrop-blur-md">
+                 Missing Replicate API Token
                </div>
              )}
           </div>
         </div>
 
-        <StudioCanvas 
-          cameraPos={cameraPos} 
-          setCameraPos={setCameraPos}
-          lightPos={lightPos} 
-          setLightPos={setLightPos}
-        />
+        {/* Error Notification */}
+        {renderStatus === 'error' && errorMessage && (
+           <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 bg-red-900/90 border border-red-500 text-white px-6 py-3 rounded shadow-xl flex items-center gap-4">
+             <span>{errorMessage}</span>
+             <button onClick={() => setRenderStatus('idle')}><X size={16}/></button>
+           </div>
+        )}
+
+        <div className="flex-1 relative overflow-hidden">
+          <StudioCanvas 
+            cameraPos={cameraPos} 
+            setCameraPos={setCameraPos}
+            lightPos={lightPos} 
+            setLightPos={setLightPos}
+          />
+        </div>
         
         {/* Floating Controls */}
         <ControlPanel 
@@ -125,7 +154,7 @@ export default function App() {
             
             <div className="p-4 border-t border-neutral-800 flex justify-between items-center bg-neutral-900">
                <div className="text-xs text-neutral-500 font-mono">
-                 {fiboData.camera.lens} | {fiboData.lighting.direction}
+                 {fiboData.structured_prompt.camera.lens} | {fiboData.structured_prompt.camera.aperture} | {fiboData.structured_prompt.lighting.direction}
                </div>
                <a 
                  href={renderedImage} 

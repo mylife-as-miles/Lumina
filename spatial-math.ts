@@ -8,13 +8,12 @@ import { Coordinates, FiboPrompt } from '../types';
 export const calculateFiboParams = (
   cam: Coordinates, 
   light: Coordinates, 
-  userPrompt: string
+  userPrompt: string,
+  apertureVal: string = "f/5.6"
 ): FiboPrompt => {
   
   // --- Camera Logic ---
   const camDist = Math.sqrt(cam.x ** 2 + cam.y ** 2);
-  const camAngleRad = Math.atan2(cam.y, cam.x);
-  const camAngleDeg = camAngleRad * (180 / Math.PI);
 
   let lens = "50mm (Standard)";
   if (camDist < 100) lens = "24mm (Wide Angle)";
@@ -24,16 +23,11 @@ export const calculateFiboParams = (
 
   let view = "Front View";
   // Simple quadrant logic for view angle
-  // -90 is top (in screen coords if y is inverted, but let's assume standard math grid: up is neg Y in DOM usually, but let's stick to Cartesian for logic)
-  // In DOM: -Y is Up, +Y is Down. -X Left, +X Right.
-  
-  if (Math.abs(cam.x) < 40 && cam.y > 0) view = "Front View";
-  else if (Math.abs(cam.x) < 40 && cam.y < 0) view = "Back View";
-  else if (cam.x < -40) view = "Left Side Profile";
-  else if (cam.x > 40) view = "Right Side Profile";
-  
-  // Refine with height (simulated by Y proximity to 0 in a top-down view? 
-  // or purely radial). Let's keep it simple top-down 2D map.
+  // Updated threshold to 50 based on visual guidelines
+  if (Math.abs(cam.x) < 50 && cam.y > 0) view = "Front View";
+  else if (Math.abs(cam.x) < 50 && cam.y < 0) view = "Back View";
+  else if (cam.x < -50) view = "Left Side Profile";
+  else if (cam.x > 50) view = "Right Side Profile";
   
   // --- Lighting Logic ---
   const lightDist = Math.sqrt(light.x ** 2 + light.y ** 2);
@@ -42,9 +36,9 @@ export const calculateFiboParams = (
 
   let direction = "Front Lighting";
   
-  // Map angles to directions (DOM coords: 0 is Right, 90 is Down, 180 is Left, -90 is Up)
+  // Map angles to directions
   if (lightAngleDeg > -45 && lightAngleDeg <= 45) direction = "Right Side Lighting";
-  else if (lightAngleDeg > 45 && lightAngleDeg <= 135) direction = "Front Lighting (Low)"; // Assuming down is front for the subject
+  else if (lightAngleDeg > 45 && lightAngleDeg <= 135) direction = "Front Lighting (Low)";
   else if (lightAngleDeg > 135 || lightAngleDeg <= -135) direction = "Left Side Lighting";
   else if (lightAngleDeg > -135 && lightAngleDeg <= -45) direction = "Back/Rim Lighting";
 
@@ -53,13 +47,16 @@ export const calculateFiboParams = (
   if (lightDist > 200) style = "Diffused/Ambient Light";
 
   return {
-    camera: {
-      lens,
-      view,
-    },
-    lighting: {
-      direction,
-      style,
+    structured_prompt: {
+      camera: {
+        lens,
+        view,
+        aperture: apertureVal,
+      },
+      lighting: {
+        direction,
+        style,
+      },
     },
     prompt: userPrompt || "A futuristic portrait"
   };

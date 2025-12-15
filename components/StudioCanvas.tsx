@@ -1,8 +1,28 @@
-import React, { useState } from 'react';
-import { motion, useAnimation } from 'framer-motion';
-import { Camera, Zap, Box } from 'lucide-react';
+import React, { useState, useRef, useEffect, Suspense } from 'react';
 import { Coordinates } from '../types';
-import { DraggableIcon } from './DraggableIcon';
+
+// Three.js Imports
+import * as THREE from 'three';
+import { Canvas } from '@react-three/fiber';
+import { 
+  OrbitControls, 
+  TransformControls, 
+  Grid, 
+  Environment, 
+  ContactShadows, 
+  Text,
+  Float
+} from '@react-three/drei';
+
+// --- TYPE DECLARATION FIX ---
+// Override JSX.IntrinsicElements to allow React Three Fiber elements which are generated dynamically.
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      [elemName: string]: any;
+    }
+  }
+}
 
 interface StudioCanvasProps {
   cameraPos: Coordinates;
@@ -13,179 +33,282 @@ interface StudioCanvasProps {
   onInteractionEnd?: () => void;
 }
 
+// --- 3D SUB-COMPONENTS ---
+
+const SubjectModel = () => {
+  return (
+    <group position={[0, 0, 0]}>
+      {/* Abstract Artistic Mannequin */}
+      <Float speed={2} rotationIntensity={0.2} floatIntensity={0.2}>
+        <mesh position={[0, 25, 0]} castShadow receiveShadow>
+           <sphereGeometry args={[12, 32, 32]} />
+           <meshStandardMaterial color="#333" roughness={0.1} metalness={0.8} />
+        </mesh>
+        <mesh position={[0, -10, 0]} castShadow receiveShadow>
+           <capsuleGeometry args={[10, 40, 4, 16]} />
+           <meshStandardMaterial color="#1a1a1a" roughness={0.3} metalness={0.5} />
+        </mesh>
+      </Float>
+      {/* Grounding Ring */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.1, 0]} receiveShadow>
+        <ringGeometry args={[15, 16, 32]} />
+        <meshBasicMaterial color="#00f0ff" opacity={0.2} transparent side={THREE.DoubleSide} />
+      </mesh>
+    </group>
+  );
+};
+
+// A specialized controller for a prop in the 3D scene
+const PropController = ({ 
+  position, 
+  onDrag, 
+  onDragStart, 
+  onDragEnd, 
+  color, 
+  label, 
+  type 
+}: any) => {
+  const meshRef = useRef<THREE.Group>(null);
+  const [hovered, setHovered] = useState(false);
+  const [isSelected, setIsSelected] = useState(false);
+  
+  // Mapping App Coords (X, Y=Depth, Z=Height) to Three (X, Y=Height, Z=Depth)
+  const threePos = new THREE.Vector3(position.x, position.z, position.y);
+  
+  // Update internal ref if prop changes externally (e.g. undo/redo)
+  useEffect(() => {
+    if (meshRef.current) {
+      meshRef.current.position.set(position.x, position.z, position.y);
+      // Look at center
+      meshRef.current.lookAt(0, position.z * 0.5, 0); 
+    }
+  }, [position.x, position.y, position.z]);
+
+  return (
+    <>
+      <TransformControls 
+        object={meshRef as any} 
+        mode="translate"
+        enabled={isSelected}
+        showX={isSelected} showY={isSelected} showZ={isSelected}
+        size={0.8}
+        onMouseDown={() => {
+          if (onDragStart) onDragStart();
+        }}
+        onMouseUp={() => {
+          if (onDragEnd) onDragEnd();
+        }}
+        onChange={(e) => {
+           if (meshRef.current) {
+             const p = meshRef.current.position;
+             // Sync back: Three(X, Y, Z) -> App(X, Z, Y)
+             onDrag({ x: p.x, y: p.z, z: p.y });
+             meshRef.current.lookAt(0, p.y * 0.5, 0);
+           }
+        }}
+      >
+        <group 
+          ref={meshRef} 
+          position={threePos} 
+          onClick={(e) => { e.stopPropagation(); setIsSelected(!isSelected); }}
+          onPointerOver={() => setHovered(true)}
+          onPointerOut={() => setHovered(false)}
+        >
+          {/* Visual Representation */}
+          <group scale={isSelected ? 1.1 : 1}>
+            {/* The "Device" Mesh */}
+            <mesh rotation={[0, Math.PI, 0]}>
+               {type === 'camera' ? (
+                 <group>
+                   <boxGeometry args={[15, 15, 25]} />
+                   <meshStandardMaterial color={isSelected ? color : "#222"} emissive={color} emissiveIntensity={isSelected ? 0.5 : 0.1} />
+                   <mesh position={[0, 0, 15]} rotation={[Math.PI/2, 0, 0]}>
+                     <cylinderGeometry args={[8, 8, 10]} />
+                     <meshStandardMaterial color="#111" />
+                   </mesh>
+                 </group>
+               ) : (
+                 <group rotation={[Math.PI/2, 0, 0]}>
+                   <cylinderGeometry args={[2, 12, 15, 4]} />
+                   <meshStandardMaterial color={isSelected ? color : "#222"} emissive={color} emissiveIntensity={isSelected ? 0.8 : 0.2} />
+                   <mesh position={[0, -8, 0]}>
+                      <sphereGeometry args={[5]} />
+                      <meshBasicMaterial color="#fff" />
+                   </mesh>
+                 </group>
+               )}
+            </mesh>
+
+            {/* Frustum / Light Cone Helper */}
+            {type === 'camera' && (
+              <mesh position={[0, 0, -40]} rotation={[Math.PI/2, 0, 0]}>
+                 <coneGeometry args={[20, 60, 4, 1, true]} />
+                 <meshBasicMaterial color={color} wireframe transparent opacity={0.1} />
+              </mesh>
+            )}
+             {type === 'light' && (
+              <mesh position={[0, 0, -40]} rotation={[Math.PI/2, 0, 0]}>
+                 <coneGeometry args={[25, 60, 32, 1, true]} />
+                 <meshBasicMaterial color={color} transparent opacity={0.05} side={THREE.DoubleSide} />
+              </mesh>
+            )}
+
+            {/* Label */}
+            <Text 
+              position={[0, 25, 0]} 
+              fontSize={6} 
+              color="white" 
+              anchorX="center" 
+              anchorY="middle"
+              billboard
+              font="https://fonts.gstatic.com/s/roboto/v18/KFOmCnqEu92Fr1Mu4mxM.woff" // fallback font
+            >
+              {label}
+            </Text>
+            
+            {/* Coordinates Tooltip (Only when selected/hovered) */}
+            {(hovered || isSelected) && (
+              <Text 
+                position={[0, 16, 0]} 
+                fontSize={3} 
+                color="#888" 
+                anchorX="center" 
+                anchorY="middle" 
+                billboard
+              >
+                {Math.round(position.x)}, {Math.round(position.y)}, {Math.round(position.z)}
+              </Text>
+            )}
+          </group>
+        </group>
+      </TransformControls>
+    </>
+  );
+};
+
+const StudioScene = ({ 
+  cameraPos, setCameraPos, onCamDragEnd,
+  lightPos, setLightPos, onLightDragEnd
+}: any) => {
+  // Lighting Target (Subject Center)
+  const [target] = useState(() => {
+    const t = new THREE.Object3D();
+    t.position.set(0, 20, 0); 
+    return t;
+  });
+
+  return (
+    <>
+      <primitive object={target} />
+
+      {/* --- Environment & Lighting --- */}
+      <ambientLight intensity={0.2} />
+      
+      {/* Dynamic Main SpotLight */}
+      <spotLight 
+        position={[lightPos.x, lightPos.z, lightPos.y]} 
+        target={target}
+        intensity={1500} 
+        angle={0.8}
+        penumbra={0.5}
+        distance={2000}
+        castShadow
+        shadow-bias={-0.0001}
+      />
+
+      <Environment preset="city" />
+      
+      {/* --- Floor --- */}
+      <Grid 
+        infiniteGrid 
+        fadeDistance={500} 
+        sectionSize={50} 
+        sectionThickness={1.5} 
+        sectionColor="#333" 
+        cellSize={10} 
+        cellThickness={0.6} 
+        cellColor="#1a1a1a" 
+        position={[0, -0.1, 0]}
+      />
+      
+      {/* Axes */}
+      <group position={[0, 0.1, 0]}>
+        {/* X Axis (Red) */}
+        <mesh position={[100, 0, 0]} rotation={[0, 0, Math.PI/2]}>
+           <cylinderGeometry args={[0.2, 0.2, 200]} />
+           <meshBasicMaterial color="#500" />
+        </mesh>
+        {/* Z Axis (Blue - Depth in 3D) */}
+        <mesh position={[0, 0, 100]} rotation={[Math.PI/2, 0, 0]}>
+           <cylinderGeometry args={[0.2, 0.2, 200]} />
+           <meshBasicMaterial color="#005" />
+        </mesh>
+      </group>
+
+      <SubjectModel />
+      <ContactShadows resolution={1024} scale={200} blur={2} opacity={0.5} far={10} color="#000" />
+
+      {/* --- Interactables --- */}
+      <PropController 
+        type="camera"
+        label="CAMERA"
+        position={cameraPos}
+        onDrag={setCameraPos}
+        onDragEnd={onCamDragEnd}
+        color="#00f0ff"
+      />
+
+      <PropController 
+        type="light"
+        label="LIGHT"
+        position={lightPos}
+        onDrag={setLightPos}
+        onDragEnd={onLightDragEnd}
+        color="#ffaa00"
+      />
+
+      {/* Orbit Controls (Camera Movement) */}
+      <OrbitControls 
+        makeDefault 
+        minPolarAngle={0} 
+        maxPolarAngle={Math.PI / 2 - 0.05} // Don't go below floor
+        maxDistance={500}
+      />
+    </>
+  );
+};
+
 export const StudioCanvas: React.FC<StudioCanvasProps> = ({
   cameraPos,
   setCameraPos,
   lightPos,
   setLightPos,
-  onInteractionStart,
   onInteractionEnd
 }) => {
-  // Zoom & Pan State
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [is3DMode, setIs3DMode] = useState(false); // New 3D toggle
-  const controls = useAnimation();
-
-  // Euclidean distances for dynamic rings (2D projection distance)
-  const camDist = Math.sqrt(cameraPos.x ** 2 + cameraPos.y ** 2);
-  const lightDist = Math.sqrt(lightPos.x ** 2 + lightPos.y ** 2);
-
-  const handleWheel = (e: React.WheelEvent) => {
-    const scaleFactor = 0.001;
-    const newZoom = Math.min(Math.max(0.2, zoom - e.deltaY * scaleFactor), 4);
-    setZoom(newZoom);
-  };
-
-  const handlePan = (event: any, info: any) => {
-    setPan({ x: pan.x + info.delta.x, y: pan.y + info.delta.y });
-  };
-  
-  const triggerShake = () => {
-    if (onInteractionEnd) onInteractionEnd();
-    
-    controls.start({
-      x: [0, -4, 4, -2, 2, 0],
-      y: [0, -2, 2, -1, 1, 0],
-      transition: { duration: 0.3, ease: "easeInOut" }
-    });
-  };
-
   return (
-    <div 
-      className="relative w-full h-full bg-studio-bg overflow-hidden flex items-center justify-center select-none shadow-inner shadow-black cursor-crosshair group touch-none"
-      onWheel={handleWheel}
-      style={{ perspective: is3DMode ? '1000px' : 'none' }} // Enable 3D perspective context
-    >
-      {/* --- POST PROCESSING EFFECTS LAYERS --- */}
-      <div className="absolute inset-0 pointer-events-none z-20 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.2)_50%,rgba(0,0,0,0.8)_100%)]" />
-      <div className="absolute inset-0 pointer-events-none z-10 opacity-[0.03] mix-blend-overlay"
-           style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='1'/%3E%3C/svg%3E")` }}>
-      </div>
-      <div className="absolute inset-0 pointer-events-none z-20 shadow-[inset_0_0_100px_rgba(0,0,0,0.5)]"></div>
-
-      {/* Draggable Background Area for Panning */}
-      <motion.div 
-        className="absolute inset-0 w-full h-full z-0"
-        onPan={handlePan} 
-        style={{ touchAction: 'none' }}
-      />
-
-      {/* Transformed World Container */}
-      <motion.div
-        className="relative flex items-center justify-center w-0 h-0 preserve-3d"
-        animate={controls}
-        style={{
-          scale: zoom,
-          x: pan.x,
-          y: pan.y,
-          rotateX: is3DMode ? 45 : 0, // Tilt floor in 3D mode
-          rotateY: is3DMode ? 0 : 0,
-          transition: "transform 0.5s ease"
-        }}
-      >
-        {/* Infinite Grid */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[4000px] h-[4000px] pointer-events-none opacity-20"
-             style={{ 
-               backgroundImage: `linear-gradient(#333 1px, transparent 1px), linear-gradient(90deg, #333 1px, transparent 1px)`, 
-               backgroundSize: '50px 50px',
-               backgroundPosition: 'center center',
-               maskImage: 'radial-gradient(circle at center, black 0%, black 40%, transparent 80%)',
-               WebkitMaskImage: 'radial-gradient(circle at center, black 0%, black 40%, transparent 80%)',
-               transform: 'translateZ(0)' // Force GPU layer
-             }}>
-        </div>
-
-        {/* Axes */}
-        <div className="absolute w-[4000px] h-[1px] bg-neutral-800" style={{ maskImage: 'linear-gradient(90deg, transparent, black 40%, black 60%, transparent)' }}></div>
-        <div className="absolute h-[4000px] w-[1px] bg-neutral-800" style={{ maskImage: 'linear-gradient(180deg, transparent, black 40%, black 60%, transparent)' }}></div>
-
-        {/* Visual Zones - Only show in 2D mode to avoid clutter in 3D */}
-        {!is3DMode && (
-          <>
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[100px] h-[4000px] bg-studio-accent/5 pointer-events-none border-l border-r border-dashed border-studio-accent/30 flex flex-col items-center justify-center gap-[600px]"
-                 style={{ maskImage: 'linear-gradient(180deg, transparent 5%, black 40%, black 60%, transparent 95%)' }}>
-                <div className="text-[80px] font-bold text-studio-accent/10 rotate-90 whitespace-nowrap">FRONT VIEW</div>
-                <div className="text-[80px] font-bold text-studio-accent/10 rotate-90 whitespace-nowrap">BACK VIEW</div>
-            </div>
-            <div className="absolute rounded-full border border-neutral-800 w-[160px] h-[160px] pointer-events-none"></div>
-            <div className="absolute rounded-full border border-neutral-800 w-[360px] h-[360px] pointer-events-none"></div>
-          </>
-        )}
-
-        {/* Dynamic Range Rings (Projected on floor) */}
-        <motion.div 
-          className="absolute border border-studio-accent/40 rounded-full pointer-events-none border-dashed z-0"
-          animate={{ width: camDist * 2, height: camDist * 2 }}
-          transition={{ type: "spring", stiffness: 100, damping: 20 }}
-        />
-        
-        <motion.div 
-          className="absolute border border-studio-light/40 rounded-full pointer-events-none border-dashed z-0"
-          animate={{ width: lightDist * 2, height: lightDist * 2 }}
-          transition={{ type: "spring", stiffness: 100, damping: 20 }}
-        />
-
-        {/* Subject (Center) */}
-        <div className="absolute z-10 flex flex-col items-center justify-center pointer-events-none" style={{ transform: 'translateZ(0)' }}>
-          <div className="absolute w-[100px] h-[100px] bg-black opacity-60 blur-xl rounded-full -z-10"></div>
-          <div className="w-3 h-3 bg-white rounded-full shadow-[0_0_15px_white] z-10"></div>
-          <div className="w-[1px] h-[20px] bg-neutral-700 absolute -top-6"></div>
-          <div className="w-[20px] h-[1px] bg-neutral-700 absolute -left-6"></div>
-          {/* 3D height indicator pole */}
-          {is3DMode && <div className="absolute w-[1px] h-[100px] bg-gradient-to-t from-white/20 to-transparent bottom-0"></div>}
-        </div>
-
-        {/* Interactive Icons */}
-        <DraggableIcon 
-          position={cameraPos} 
-          onDrag={setCameraPos}
-          onDragStart={onInteractionStart}
-          onDragEnd={triggerShake}
-          icon={<Camera size={20} className="text-black" />}
-          label="Camera"
-          color="border-studio-accent bg-studio-accent shadow-[0_0_15px_rgba(0,240,255,0.4)]"
-          zoom={zoom}
-          is3DMode={is3DMode}
-        />
-
-        <DraggableIcon 
-          position={lightPos} 
-          onDrag={setLightPos}
-          onDragStart={onInteractionStart}
-          onDragEnd={triggerShake}
-          icon={<Zap size={20} className="text-black" />}
-          label="Light"
-          color="border-studio-light bg-studio-light shadow-[0_0_15px_rgba(255,170,0,0.4)]"
-          zoom={zoom}
-          is3DMode={is3DMode}
-        />
-
-      </motion.div>
-      
-      {/* HUD: Controls - Relocated for Mobile Safety */}
-      <div className="absolute top-20 left-6 flex flex-col gap-2 pointer-events-none z-40 opacity-70">
-        <div className="bg-black/80 backdrop-blur border border-neutral-800 rounded px-3 py-2 text-xs font-mono text-neutral-400">
-           <div>ZOOM: {Math.round(zoom * 100)}%</div>
-           <div>PAN: {Math.round(pan.x)}, {Math.round(pan.y)}</div>
-           {is3DMode && <div className="text-studio-accent">3D VIEW ACTIVE</div>}
-        </div>
-      </div>
-      
-      {/* 3D Toggle Button */}
-      <div className="absolute top-6 left-6 z-40 pointer-events-auto">
-        <button 
-          onClick={() => setIs3DMode(!is3DMode)}
-          className={`flex items-center gap-2 px-3 py-2 rounded border transition-all ${is3DMode ? 'bg-studio-accent text-black border-studio-accent' : 'bg-black text-neutral-400 border-neutral-700 hover:text-white'}`}
-        >
-          <Box size={16} />
-          <span className="text-xs font-bold font-mono">3D VIEW</span>
-        </button>
-      </div>
-
-      <div className="absolute top-6 right-6 text-xs text-neutral-600 font-mono text-right pointer-events-none z-40 hidden md:block">
-        SCROLL TO ZOOM<br/>DRAG BG TO PAN<br/>SHIFT+DRAG FOR HEIGHT (Z)
-      </div>
+    <div className="w-full h-full bg-studio-bg cursor-crosshair">
+       <Canvas
+         shadows
+         camera={{ position: [0, 50, 200], fov: 45 }}
+         gl={{ preserveDrawingBuffer: true, antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}
+         dpr={[1, 2]}
+       >
+         <Suspense fallback={null}>
+            <StudioScene 
+               cameraPos={cameraPos}
+               setCameraPos={setCameraPos}
+               onCamDragEnd={onInteractionEnd}
+               lightPos={lightPos}
+               setLightPos={setLightPos}
+               onLightDragEnd={onInteractionEnd}
+            />
+         </Suspense>
+       </Canvas>
+       
+       {/* 2D Overlay Elements */}
+       <div className="absolute bottom-4 left-4 text-[10px] text-neutral-600 font-mono pointer-events-none select-none">
+          Left Click: Rotate • Right Click: Pan • Scroll: Zoom • Click Props to Move
+       </div>
     </div>
   );
 };

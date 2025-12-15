@@ -11,6 +11,9 @@ export const calculateFiboParams = (
   filters: string[] = []
 ): FiboPrompt => {
   
+  // Convert filters to a Set for easier lookup
+  const activeFilters = new Set(filters);
+
   // --- 1. Photographic Characteristics ---
   const camDist = Math.sqrt(cam.x ** 2 + cam.y ** 2);
   
@@ -35,6 +38,14 @@ export const calculateFiboParams = (
   if (fNum <= 2.8) dof += ", Shallow Depth of Field, Bokeh Background";
   else if (fNum >= 11) dof += ", Deep Depth of Field, Sharp Background";
   else dof += ", Standard Depth of Field";
+
+  // -- FILTER LOGIC: Optical Effects --
+  // We append these directly to camera characteristics for better adherence
+  let focusStr = "Sharp focus on subject";
+  if (activeFilters.has("Vignette")) lens += ", Heavy Vignette";
+  if (activeFilters.has("Chromatic Aberration")) lens += ", Chromatic Aberration";
+  if (activeFilters.has("Motion Blur")) focusStr = "Motion Blur, Kinetic Energy";
+  if (activeFilters.has("Soft Bloom")) focusStr += ", Soft Focus, Dreamy Haze";
 
   // --- 2. Lighting Logic ---
   const lightDist = Math.sqrt(light.x ** 2 + light.y ** 2);
@@ -76,7 +87,14 @@ export const calculateFiboParams = (
   if (cam.x < -80) composition = "Rule of Thirds (Left)";
   else if (cam.x > 80) composition = "Rule of Thirds (Right)";
   
-  const mood = filters.length > 0 ? filters.join(", ") : "Neutral, Clean";
+  // -- FILTER LOGIC: Styles --
+  let artisticStyle = "Photorealistic / Editorial";
+  if (activeFilters.has("Film Grain")) artisticStyle += ", ISO 3200, Analog Film Grain, Noise";
+  if (activeFilters.has("Cinematic Color Grading")) artisticStyle += ", Color Graded, Teal and Orange LUT";
+  
+  const mood = activeFilters.size > 0 
+    ? `Stylized: ${Array.from(activeFilters).join(", ")}` 
+    : "Neutral, Clean, Professional";
   
   // Simple Color Scheme inference based on lighting position (Creative liberty)
   let colorScheme = "Natural / Balanced";
@@ -100,12 +118,12 @@ export const calculateFiboParams = (
     structured_prompt: {
       short_description: description,
       style_medium: "Cinematic Photography",
-      artistic_style: "Photorealistic / Editorial",
+      artistic_style: artisticStyle,
       photographic_characteristics: {
         camera_angle: angle,
         lens_focal_length: lens,
         depth_of_field: dof,
-        focus: "Sharp focus on subject"
+        focus: focusStr
       },
       lighting: {
         direction: lightDir,

@@ -53,7 +53,7 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({
 
   return (
     <div 
-      className="relative w-full h-full bg-studio-bg overflow-hidden flex items-center justify-center select-none shadow-inner shadow-black cursor-crosshair group"
+      className="relative w-full h-full bg-studio-bg overflow-hidden flex items-center justify-center select-none shadow-inner shadow-black cursor-crosshair group touch-none"
       onWheel={handleWheel}
       style={{ perspective: is3DMode ? '1000px' : 'none' }} // Enable 3D perspective context
     >
@@ -108,7 +108,6 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({
                 <div className="text-[80px] font-bold text-studio-accent/10 rotate-90 whitespace-nowrap">FRONT VIEW</div>
                 <div className="text-[80px] font-bold text-studio-accent/10 rotate-90 whitespace-nowrap">BACK VIEW</div>
             </div>
-            {/* ... other labels skipped for brevity, keeping main grid ... */}
             <div className="absolute rounded-full border border-neutral-800 w-[160px] h-[160px] pointer-events-none"></div>
             <div className="absolute rounded-full border border-neutral-800 w-[360px] h-[360px] pointer-events-none"></div>
           </>
@@ -164,8 +163,8 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({
 
       </motion.div>
       
-      {/* HUD: Controls */}
-      <div className="absolute bottom-6 left-6 flex flex-col gap-2 pointer-events-none z-50">
+      {/* HUD: Controls - Relocated for Mobile Safety */}
+      <div className="absolute top-20 left-6 flex flex-col gap-2 pointer-events-none z-40 opacity-70">
         <div className="bg-black/80 backdrop-blur border border-neutral-800 rounded px-3 py-2 text-xs font-mono text-neutral-400">
            <div>ZOOM: {Math.round(zoom * 100)}%</div>
            <div>PAN: {Math.round(pan.x)}, {Math.round(pan.y)}</div>
@@ -174,7 +173,7 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({
       </div>
       
       {/* 3D Toggle Button */}
-      <div className="absolute top-6 left-6 z-50 pointer-events-auto">
+      <div className="absolute top-6 left-6 z-40 pointer-events-auto">
         <button 
           onClick={() => setIs3DMode(!is3DMode)}
           className={`flex items-center gap-2 px-3 py-2 rounded border transition-all ${is3DMode ? 'bg-studio-accent text-black border-studio-accent' : 'bg-black text-neutral-400 border-neutral-700 hover:text-white'}`}
@@ -184,7 +183,7 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({
         </button>
       </div>
 
-      <div className="absolute top-6 right-6 text-xs text-neutral-600 font-mono text-right pointer-events-none z-50">
+      <div className="absolute top-6 right-6 text-xs text-neutral-600 font-mono text-right pointer-events-none z-40 hidden md:block">
         SCROLL TO ZOOM<br/>DRAG BG TO PAN<br/>SHIFT+DRAG FOR HEIGHT (Z)
       </div>
     </div>

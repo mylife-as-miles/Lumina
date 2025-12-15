@@ -6,7 +6,7 @@ import { Coordinates, FiboPrompt, RenderResult, StudioState } from './types';
 import { calculateFiboParams } from './spatial-math';
 import { getDirectorCoordinates } from './services/geminiService';
 import { generateImage } from './services/replicateService';
-import { Download, X, Undo, Redo } from 'lucide-react';
+import { Download, X, Undo, Redo, Menu } from 'lucide-react';
 
 // Initial Positions
 const INITIAL_CAMERA: Coordinates = { x: 0, y: 150, z: 0 }; // Front, Medium distance, Eye Level
@@ -34,6 +34,9 @@ export default function App() {
   const aperture = currentState.aperture;
   const prompt = currentState.prompt;
   const filters = currentState.filters;
+
+  // Mobile Menu State
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // --- HISTORY MANAGEMENT ---
   const pushToHistory = useCallback((newState: Partial<StudioState>) => {
@@ -100,9 +103,7 @@ export default function App() {
   });
   
   // Recalculate JSON whenever current state OR TEMP PROMPT changes
-  // This fixes the issue where the text input wasn't updating the generated prompt
   useEffect(() => {
-    // Use tempPrompt (the live input) instead of prompt (the committed history state)
     const data = calculateFiboParams(cameraPos, lightPos, tempPrompt, aperture, filters);
     setFiboData(data);
   }, [cameraPos, lightPos, tempPrompt, aperture, filters]);
@@ -176,7 +177,7 @@ export default function App() {
   const hasReplicateKey = !!(process.env.REPLICATE_API_TOKEN || process.env.NEXT_PUBLIC_REPLICATE_API_TOKEN);
 
   return (
-    <div className="flex h-screen w-full bg-studio-bg text-white font-sans overflow-hidden">
+    <div className="flex h-[100dvh] w-full bg-studio-bg text-white font-sans overflow-hidden">
       
       {/* Left Sidebar: Matrix View (JSON) */}
       <MatrixView 
@@ -185,13 +186,25 @@ export default function App() {
         setAperture={setAperture}
         filters={filters}
         setFilters={(f) => pushToHistory({ filters: f })}
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
       />
       
       {/* Center: Main Studio Canvas */}
       <main className="flex-1 relative h-full flex flex-col">
         {/* Top Header */}
-        <div className="absolute top-0 left-0 w-full p-4 z-20 pointer-events-none flex justify-between items-start">
-          <div className="ml-[100px] pointer-events-auto flex gap-2"> {/* Offset for 3D button */}
+        <div className="absolute top-0 left-0 w-full p-4 z-50 pointer-events-none flex justify-between items-start">
+          <div className="ml-0 md:ml-[100px] pointer-events-auto flex gap-2 items-center">
+             
+             {/* Mobile Menu Button */}
+             <button 
+               className="md:hidden p-2 bg-neutral-900 border border-neutral-700 rounded text-white hover:bg-neutral-800"
+               onClick={() => setIsSidebarOpen(true)}
+             >
+               <Menu size={16} />
+             </button>
+
+             {/* Undo/Redo */}
              <div className="flex bg-neutral-900 border border-neutral-700 rounded-md overflow-hidden">
                 <button onClick={undo} disabled={historyIndex === 0} className="p-2 hover:bg-neutral-800 disabled:opacity-30 transition-colors" title="Undo (Ctrl+Z)">
                   <Undo size={16} />
@@ -220,8 +233,8 @@ export default function App() {
 
         {/* Error Notification */}
         {renderStatus === 'error' && errorMessage && (
-           <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 bg-red-900/90 border border-red-500 text-white px-6 py-3 rounded shadow-xl flex items-center gap-4">
-             <span>{errorMessage}</span>
+           <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[60] bg-red-900/90 border border-red-500 text-white px-6 py-3 rounded shadow-xl flex items-center gap-4 w-[90%] md:w-auto text-sm md:text-base">
+             <span className="truncate">{errorMessage}</span>
              <button onClick={() => setRenderStatus('idle')}><X size={16}/></button>
            </div>
         )}
@@ -239,36 +252,36 @@ export default function App() {
               commitLight();
             }}
           />
+          
+          {/* Fixed Floating Controls - Now anchored inside the canvas container */}
+          <ControlPanel 
+            prompt={tempPrompt}
+            setPrompt={setTempPrompt}
+            onAgentAction={handleAgentAction}
+            isAgentThinking={isAgentThinking}
+            onRender={handleRender}
+            renderStatus={renderStatus}
+          />
         </div>
-        
-        {/* Floating Controls */}
-        <ControlPanel 
-          prompt={tempPrompt}
-          setPrompt={setTempPrompt}
-          onAgentAction={handleAgentAction}
-          isAgentThinking={isAgentThinking}
-          onRender={handleRender}
-          renderStatus={renderStatus}
-        />
       </main>
 
       {/* Render Result Overlay */}
       {renderedImage && (
-        <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-8">
-          <div className="relative bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl max-w-4xl max-h-full flex flex-col">
+        <div className="absolute inset-0 z-[70] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 md:p-8">
+          <div className="relative bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl w-full max-w-4xl max-h-full flex flex-col">
             <div className="p-4 border-b border-neutral-800 flex justify-between items-center">
-              <h3 className="font-mono text-white">RENDER_OUTPUT_001</h3>
+              <h3 className="font-mono text-white text-sm md:text-base">RENDER_OUTPUT_001</h3>
               <button onClick={() => setRenderedImage(null)} className="text-neutral-500 hover:text-white">
                 <X size={24} />
               </button>
             </div>
             
             <div className="p-2 bg-black flex-1 overflow-hidden flex items-center justify-center">
-              <img src={renderedImage} alt="Generated Output" className="max-w-full max-h-[70vh] object-contain rounded" />
+              <img src={renderedImage} alt="Generated Output" className="max-w-full max-h-[60vh] md:max-h-[70vh] object-contain rounded" />
             </div>
             
             <div className="p-4 border-t border-neutral-800 flex justify-between items-center bg-neutral-900">
-               <div className="text-xs text-neutral-500 font-mono">
+               <div className="text-xs text-neutral-500 font-mono hidden md:block">
                  {fiboData.structured_prompt.photographic_characteristics.lens_focal_length} | {fiboData.structured_prompt.photographic_characteristics.depth_of_field}
                </div>
                <a 
@@ -276,7 +289,7 @@ export default function App() {
                  download="lumina-render.jpg"
                  target="_blank"
                  rel="noreferrer"
-                 className="flex items-center gap-2 bg-studio-accent text-black px-4 py-2 rounded text-sm font-bold hover:brightness-110"
+                 className="flex items-center gap-2 bg-studio-accent text-black px-4 py-2 rounded text-sm font-bold hover:brightness-110 w-full md:w-auto justify-center"
                >
                  <Download size={16} /> Download
                </a>

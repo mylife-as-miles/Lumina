@@ -1,0 +1,5 @@
+{
+  "name": "Lumina",
+  "description": "A Spatial Prompting interface for AI image generation, featuring a drag-and-drop studio canvas and a Gemini-powered director agent.",
+  "requestFramePermissions": []
+}

@@ -5,17 +5,30 @@ import { FiboPrompt } from "../types";
 const PROXY = "https://corsproxy.io/?";
 
 export const generateImage = async (params: FiboPrompt): Promise<string> => {
-  // STRICTLY use Replicate tokens. Do not fall back to generic API_KEY which is reserved for Gemini.
+  // STRICTLY use Replicate tokens.
   const apiKey = process.env.REPLICATE_API_TOKEN || 
                  process.env.NEXT_PUBLIC_REPLICATE_API_TOKEN;
   
   if (!apiKey) {
-    throw new Error("Missing Replicate API Token. Please set REPLICATE_API_TOKEN or NEXT_PUBLIC_REPLICATE_API_TOKEN in your environment.");
+    throw new Error("Missing Replicate API Token.");
   }
 
   const modelEndpoint = "https://api.replicate.com/v1/models/bria/fibo/predictions";
-  // Encode the target URL to pass it through the proxy
   const url = `${PROXY}${encodeURIComponent(modelEndpoint)}`;
+
+  const sp = params.structured_prompt;
+
+  // Construct a very rich text prompt from the structure since the model might primarily use text
+  // but we also send specific keys if they are supported or for metadata.
+  const richPrompt = `
+    ${sp.short_description}.
+    Style: ${sp.style_medium}, ${sp.artistic_style}.
+    Camera: ${sp.photographic_characteristics.lens_focal_length}, ${sp.photographic_characteristics.camera_angle}, ${sp.photographic_characteristics.depth_of_field}.
+    Lighting: ${sp.lighting.direction}, ${sp.lighting.conditions}, ${sp.lighting.shadows}.
+    Mood: ${sp.aesthetics.mood_atmosphere}, ${sp.aesthetics.color_scheme}.
+    Composition: ${sp.aesthetics.composition}.
+    Subject Pose: ${sp.objects[0]?.action_pose || 'Natural'}.
+  `.replace(/\s+/g, ' ').trim();
 
   // 1. Initiate Prediction
   const createResponse = await fetch(url, {
@@ -26,15 +39,13 @@ export const generateImage = async (params: FiboPrompt): Promise<string> => {
     },
     body: JSON.stringify({
       input: {
-        prompt: params.prompt,
-        // Map fields flatly as per likely model expectation
-        camera_lens: params.structured_prompt.camera.lens,
-        camera_view: params.structured_prompt.camera.view,
-        camera_aperture: params.structured_prompt.camera.aperture,
-        lighting_direction: params.structured_prompt.lighting.direction,
-        lighting_style: params.structured_prompt.lighting.style,
-        // Passing the full config object as well in case the model prioritizes it
-        structured_config: JSON.stringify(params.structured_prompt),
+        prompt: richPrompt,
+        // Mapping specific parameters if the model supports them, otherwise they are in the prompt
+        camera: sp.photographic_characteristics.lens_focal_length,
+        aperture: sp.photographic_characteristics.depth_of_field,
+        lighting: sp.lighting.direction,
+        // Pass the raw structured object as a string for models that might parse it
+        structured_data: JSON.stringify(sp),
         aspect_ratio: "16:9",
         num_outputs: 1,
         disable_safety_checker: true
@@ -43,31 +54,19 @@ export const generateImage = async (params: FiboPrompt): Promise<string> => {
   });
 
   if (!createResponse.ok) {
-    // Handle potential proxy errors or API errors
     const errorText = await createResponse.text().catch(() => "Unknown error");
-    let errorDetail = errorText;
-    try {
-        const json = JSON.parse(errorText);
-        errorDetail = json.detail || json.error || errorText;
-    } catch (e) {
-      // If parsing fails, use the raw text (might be HTML from proxy)
-    }
-    
-    throw new Error(`Replicate API Error (${createResponse.status}): ${errorDetail}`);
+    throw new Error(`Replicate API Error (${createResponse.status}): ${errorText.substring(0, 200)}`);
   }
 
   let prediction = await createResponse.json();
   
   // 2. Poll for Completion
-  // prediction.urls.get is the Replicate API URL. We need to proxy this too.
   const pollUrl = prediction.urls.get;
   
   while (prediction.status !== "succeeded" && prediction.status !== "failed" && prediction.status !== "canceled") {
-    // Wait 1 second before next poll
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
     const proxiedPollUrl = `${PROXY}${encodeURIComponent(pollUrl)}`;
-    
     const pollResponse = await fetch(proxiedPollUrl, {
       headers: {
         "Authorization": `Token ${apiKey}`,
@@ -75,23 +74,13 @@ export const generateImage = async (params: FiboPrompt): Promise<string> => {
       },
     });
 
-    if (!pollResponse.ok) {
-       const errorData = await pollResponse.json().catch(() => ({}));
-       throw new Error(`Polling Error: ${pollResponse.status} ${errorData.detail || pollResponse.statusText}`);
-    }
-
+    if (!pollResponse.ok) break;
     prediction = await pollResponse.json();
   }
 
-  // 3. Handle Result
-  if (prediction.status === "failed" || prediction.status === "canceled") {
+  if (prediction.status !== "succeeded") {
     throw new Error(`Prediction ${prediction.status}: ${prediction.error || "Unknown error"}`);
   }
 
-  if (!prediction.output || prediction.output.length === 0) {
-    throw new Error("Prediction succeeded but returned no output.");
-  }
-
-  // Output is usually an array of URLs, sometimes it's a string depending on model
   return Array.isArray(prediction.output) ? prediction.output[0] : prediction.output;
 };

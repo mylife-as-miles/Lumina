@@ -5,18 +5,35 @@ export interface Coordinates {
 }
 
 export interface FiboPrompt {
+  prompt: string;
   structured_prompt: {
-    camera: {
-      lens: string;
-      view: string;
-      aperture: string;
+    short_description: string;
+    style_medium: string;
+    artistic_style: string;
+    photographic_characteristics: {
+      camera_angle: string;
+      lens_focal_length: string;
+      depth_of_field: string;
+      focus: string;
     };
     lighting: {
       direction: string;
-      style: string;
+      conditions: string;
+      shadows: string;
     };
+    aesthetics: {
+      mood_atmosphere: string;
+      color_scheme: string;
+      composition: string;
+    };
+    objects: Array<{
+      description: string;
+      clothing?: string;
+      appearance_details?: string;
+      location?: string;
+      action_pose?: string;
+    }>;
   };
-  prompt: string;
 }
 
 export interface StudioState {
@@ -43,5 +60,6 @@ export const AVAILABLE_FILTERS = [
   "Soft Bloom",
   "Cinematic Color Grading",
   "Vignette",
-  "Motion Blur"
+  "Motion Blur",
+  "Chromatic Aberration"
 ];

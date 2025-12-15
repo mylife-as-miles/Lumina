@@ -70,23 +70,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [historyIndex, history]); // Deps need to be here for closure access
 
-  // --- DERIVED FIBO DATA ---
-  const [fiboData, setFiboData] = useState<FiboPrompt>({
-    structured_prompt: {
-      camera: { lens: "50mm", view: "Front", aperture: "f/5.6" },
-      lighting: { direction: "Front", style: "Soft" }
-    },
-    prompt: ""
-  });
-  
-  // Recalculate JSON whenever current state changes
-  useEffect(() => {
-    const data = calculateFiboParams(cameraPos, lightPos, prompt, aperture, filters);
-    setFiboData(data);
-  }, [cameraPos, lightPos, prompt, aperture, filters]);
-
   // --- ACTIONS ---
-
   // State setters that push to history (used for discreet updates like slider change)
   const setAperture = (val: string) => pushToHistory({ aperture: val });
   
@@ -99,6 +83,29 @@ export default function App() {
   useEffect(() => {
     setTempPrompt(prompt);
   }, [prompt]);
+
+  // --- DERIVED FIBO DATA ---
+  // Initial empty state until effect runs
+  const [fiboData, setFiboData] = useState<FiboPrompt>({
+    prompt: "",
+    structured_prompt: {
+      short_description: "",
+      style_medium: "",
+      artistic_style: "",
+      photographic_characteristics: { camera_angle: "", lens_focal_length: "", depth_of_field: "", focus: "" },
+      lighting: { direction: "", conditions: "", shadows: "" },
+      aesthetics: { mood_atmosphere: "", color_scheme: "", composition: "" },
+      objects: []
+    }
+  });
+  
+  // Recalculate JSON whenever current state OR TEMP PROMPT changes
+  // This fixes the issue where the text input wasn't updating the generated prompt
+  useEffect(() => {
+    // Use tempPrompt (the live input) instead of prompt (the committed history state)
+    const data = calculateFiboParams(cameraPos, lightPos, tempPrompt, aperture, filters);
+    setFiboData(data);
+  }, [cameraPos, lightPos, tempPrompt, aperture, filters]);
 
   // Commit handlers
   const commitCamera = () => {
@@ -149,6 +156,9 @@ export default function App() {
 
   // Handler: Render Image
   const handleRender = async () => {
+    // Save the current prompt to history so Undo works later
+    commitPrompt();
+    
     setRenderStatus('generating');
     setErrorMessage(null);
     try {
@@ -259,7 +269,7 @@ export default function App() {
             
             <div className="p-4 border-t border-neutral-800 flex justify-between items-center bg-neutral-900">
                <div className="text-xs text-neutral-500 font-mono">
-                 {fiboData.structured_prompt.camera.lens} | {fiboData.structured_prompt.camera.aperture} | {fiboData.structured_prompt.lighting.direction}
+                 {fiboData.structured_prompt.photographic_characteristics.lens_focal_length} | {fiboData.structured_prompt.photographic_characteristics.depth_of_field}
                </div>
                <a 
                  href={renderedImage} 

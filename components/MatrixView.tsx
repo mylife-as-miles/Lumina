@@ -1,22 +1,32 @@
 import React from 'react';
-import { FiboPrompt } from '../types';
-import { Code, Copy, Check, Sliders } from 'lucide-react';
+import { FiboPrompt, AVAILABLE_FILTERS } from '../types';
+import { Code, Copy, Check, Sliders, Layers } from 'lucide-react';
 
 interface MatrixViewProps {
   data: FiboPrompt;
   aperture: string;
   setAperture: (val: string) => void;
+  filters: string[];
+  setFilters: (f: string[]) => void;
 }
 
 const APERTURE_STOPS = ["f/1.4", "f/2.0", "f/2.8", "f/4.0", "f/5.6", "f/8.0", "f/11", "f/16", "f/22"];
 
-export const MatrixView: React.FC<MatrixViewProps> = ({ data, aperture, setAperture }) => {
+export const MatrixView: React.FC<MatrixViewProps> = ({ data, aperture, setAperture, filters, setFilters }) => {
   const [copied, setCopied] = React.useState(false);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(JSON.stringify(data, null, 2));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const toggleFilter = (filter: string) => {
+    if (filters.includes(filter)) {
+      setFilters(filters.filter(f => f !== filter));
+    } else {
+      setFilters([...filters, filter]);
+    }
   };
 
   const currentStopIndex = APERTURE_STOPS.indexOf(aperture);
@@ -49,7 +59,9 @@ export const MatrixView: React.FC<MatrixViewProps> = ({ data, aperture, setApert
             </div>
             <div className="flex justify-between">
               <span>view:</span>
-              <span className="text-studio-accent">{data.structured_prompt.camera.view}</span>
+              <span className="text-studio-accent truncate ml-2 text-right" title={data.structured_prompt.camera.view}>
+                {data.structured_prompt.camera.view}
+              </span>
             </div>
             
             {/* Aperture Control */}
@@ -80,12 +92,36 @@ export const MatrixView: React.FC<MatrixViewProps> = ({ data, aperture, setApert
           <div className="pl-3 border-l-2 border-studio-light space-y-1">
             <div className="flex justify-between">
               <span>direction:</span>
-              <span className="text-studio-light">{data.structured_prompt.lighting.direction}</span>
+              <span className="text-studio-light truncate ml-2 text-right">{data.structured_prompt.lighting.direction}</span>
             </div>
             <div className="flex justify-between">
               <span>style:</span>
               <span className="text-studio-light">{data.structured_prompt.lighting.style}</span>
             </div>
+          </div>
+        </div>
+
+        {/* Filters Section */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-white uppercase tracking-widest text-[10px] opacity-50 mb-1 border-b border-neutral-800 pb-1">
+            <Layers size={10} /> 
+            <span>FX Filters</span>
+          </div>
+          <div className="grid grid-cols-1 gap-1">
+             {AVAILABLE_FILTERS.map(f => (
+               <label key={f} className="flex items-center gap-2 hover:bg-neutral-800/50 p-1.5 rounded cursor-pointer transition-colors">
+                 <input 
+                    type="checkbox" 
+                    className="hidden" 
+                    checked={filters.includes(f)}
+                    onChange={() => toggleFilter(f)}
+                 />
+                 <div className={`w-3 h-3 rounded-sm border flex items-center justify-center ${filters.includes(f) ? 'bg-studio-accent border-studio-accent' : 'border-neutral-600'}`}>
+                   {filters.includes(f) && <Check size={8} className="text-black" />}
+                 </div>
+                 <span className={filters.includes(f) ? "text-white" : "text-neutral-500"}>{f}</span>
+               </label>
+             ))}
           </div>
         </div>
 

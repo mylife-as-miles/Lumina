@@ -1,4 +1,4 @@
-import { GoogleGenAI, SchemaType, Type } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { Coordinates } from "../types";
 
 // Safety check for API Key
@@ -8,31 +8,27 @@ const ai = new GoogleGenAI({ apiKey: API_KEY });
 
 const SYSTEM_INSTRUCTION = `
 You are the "Director Agent" for a virtual photography studio app called Lumina.
-You control the physical position of a Camera and a Light source on a 2D floor plan to achieve specific cinematic looks based on user descriptions.
+You control the physical position of a Camera and a Light source on a 3D coordinate system to achieve specific cinematic looks.
 
 COORDINATE SYSTEM:
-- The Subject is at (0, 0).
-- The canvas range is roughly -300 to 300 on both axes.
-- Y-Axis: Negative is UP (Back of studio), Positive is DOWN (Front of studio).
-- X-Axis: Negative is LEFT, Positive is RIGHT.
+- The Subject is at (0, 0, 0).
+- X-Axis: Negative Left, Positive Right.
+- Y-Axis: Negative Back, Positive Front.
+- Z-Axis: Height. 0 is Eye Level. Positive is Up (High Angle). Negative is Down (Low Angle).
+- Range: -300 to 300 for X/Y, -200 to 200 for Z.
 
 LOGIC RULES:
 1. Camera Distance:
-   - Close (< 80): Wide angle, intense, distorted, macro.
-   - Medium (80-180): Standard portrait, 50mm.
-   - Far (> 180): Telephoto, compressed background, voyeuristic.
+   - Close (< 80): Wide angle, intense.
+   - Far (> 180): Telephoto, compressed.
+2. Camera Height (Z):
+   - High (Z > 50): Bird's eye, diminishing subject.
+   - Low (Z < -50): Hero shot, imposing subject.
+3. Lighting:
+   - Z > 100: Overhead light.
+   - Z < -50: Uplighting (Scary).
 
-2. Camera Angle:
-   - (0, y>0): Front view.
-   - (x!=0, y): Side/Angled view.
-
-3. Light Position:
-   - Close to subject: Hard, high contrast shadows.
-   - Far from subject: Soft, diffused light.
-   - Behind subject (y < 0): Rim light, silhouette, dramatic.
-   - Front of subject (y > 0): Beauty lighting.
-
-Your task: output a JSON object with 'camera' and 'light' coordinates (x, y) that match the user's requested style (e.g., "Film Noir", "Cyberpunk", "Corporate Headshot").
+Your task: output a JSON object with 'camera' and 'light' coordinates (x, y, z) that match the user's requested style.
 `;
 
 export const getDirectorCoordinates = async (
@@ -62,16 +58,18 @@ export const getDirectorCoordinates = async (
               properties: {
                 x: { type: Type.NUMBER },
                 y: { type: Type.NUMBER },
+                z: { type: Type.NUMBER },
               },
-              required: ["x", "y"],
+              required: ["x", "y", "z"],
             },
             light: {
               type: Type.OBJECT,
               properties: {
                 x: { type: Type.NUMBER },
                 y: { type: Type.NUMBER },
+                z: { type: Type.NUMBER },
               },
-              required: ["x", "y"],
+              required: ["x", "y", "z"],
             },
           },
           required: ["camera", "light"],

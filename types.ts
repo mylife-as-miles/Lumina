@@ -1,6 +1,7 @@
 export interface Coordinates {
   x: number;
   y: number;
+  z: number; // Vertical height (Low/High angle)
 }
 
 export interface FiboPrompt {
@@ -8,7 +9,7 @@ export interface FiboPrompt {
     camera: {
       lens: string;
       view: string;
-      aperture: string; // Made required for the slider
+      aperture: string;
     };
     lighting: {
       direction: string;
@@ -21,7 +22,9 @@ export interface FiboPrompt {
 export interface StudioState {
   camera: Coordinates;
   light: Coordinates;
-  userPrompt: string;
+  aperture: string;
+  prompt: string;
+  filters: string[];
 }
 
 export interface RenderResult {
@@ -34,3 +37,11 @@ export enum StudioMode {
   MANUAL = 'MANUAL',
   AGENT = 'AGENT'
 }
+
+export const AVAILABLE_FILTERS = [
+  "Film Grain",
+  "Soft Bloom",
+  "Cinematic Color Grading",
+  "Vignette",
+  "Motion Blur"
+];

@@ -1,24 +1,76 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { StudioCanvas } from './components/StudioCanvas';
 import { MatrixView } from './components/MatrixView';
 import { ControlPanel } from './components/ControlPanel';
-import { Coordinates, FiboPrompt, RenderResult } from './types';
-import { calculateFiboParams } from './lib/spatial-math';
+import { Coordinates, FiboPrompt, RenderResult, StudioState } from './types';
+import { calculateFiboParams } from './spatial-math';
 import { getDirectorCoordinates } from './services/geminiService';
 import { generateImage } from './services/replicateService';
-import { Download, X } from 'lucide-react';
+import { Download, X, Undo, Redo } from 'lucide-react';
 
 // Initial Positions
-const INITIAL_CAMERA: Coordinates = { x: 0, y: 150 }; // Front, Medium distance
-const INITIAL_LIGHT: Coordinates = { x: 100, y: -100 }; // Right, Back (Rim light)
+const INITIAL_CAMERA: Coordinates = { x: 0, y: 150, z: 0 }; // Front, Medium distance, Eye Level
+const INITIAL_LIGHT: Coordinates = { x: 100, y: -100, z: 20 }; // Right, Back, slightly elevated
 
 export default function App() {
-  // State
-  const [cameraPos, setCameraPos] = useState<Coordinates>(INITIAL_CAMERA);
-  const [lightPos, setLightPos] = useState<Coordinates>(INITIAL_LIGHT);
-  const [aperture, setAperture] = useState<string>("f/5.6");
-  const [prompt, setPrompt] = useState<string>("");
-  
+  // --- STATE WITH HISTORY ---
+  const [history, setHistory] = useState<StudioState[]>([
+    {
+      camera: INITIAL_CAMERA,
+      light: INITIAL_LIGHT,
+      aperture: "f/5.6",
+      prompt: "",
+      filters: []
+    }
+  ]);
+  const [historyIndex, setHistoryIndex] = useState(0);
+
+  // Helper to get current state
+  const currentState = history[historyIndex];
+
+  // Derived State (for UI binding)
+  const cameraPos = currentState.camera;
+  const lightPos = currentState.light;
+  const aperture = currentState.aperture;
+  const prompt = currentState.prompt;
+  const filters = currentState.filters;
+
+  // --- HISTORY MANAGEMENT ---
+  const pushToHistory = useCallback((newState: Partial<StudioState>) => {
+    const nextState = { ...currentState, ...newState };
+    
+    // If we're not at the end of history, slice it off
+    const newHistory = history.slice(0, historyIndex + 1);
+    
+    // Only push if something actually changed (shallow check)
+    if (JSON.stringify(nextState) !== JSON.stringify(currentState)) {
+      newHistory.push(nextState);
+      setHistory(newHistory);
+      setHistoryIndex(newHistory.length - 1);
+    }
+  }, [history, historyIndex, currentState]);
+
+  const undo = () => {
+    if (historyIndex > 0) setHistoryIndex(historyIndex - 1);
+  };
+
+  const redo = () => {
+    if (historyIndex < history.length - 1) setHistoryIndex(historyIndex + 1);
+  };
+
+  // Keyboard Shortcuts for Undo/Redo
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        if (e.shiftKey) redo();
+        else undo();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [historyIndex, history]); // Deps need to be here for closure access
+
+  // --- DERIVED FIBO DATA ---
   const [fiboData, setFiboData] = useState<FiboPrompt>({
     structured_prompt: {
       camera: { lens: "50mm", view: "Front", aperture: "f/5.6" },
@@ -27,6 +79,46 @@ export default function App() {
     prompt: ""
   });
   
+  // Recalculate JSON whenever current state changes
+  useEffect(() => {
+    const data = calculateFiboParams(cameraPos, lightPos, prompt, aperture, filters);
+    setFiboData(data);
+  }, [cameraPos, lightPos, prompt, aperture, filters]);
+
+  // --- ACTIONS ---
+
+  // State setters that push to history (used for discreet updates like slider change)
+  const setAperture = (val: string) => pushToHistory({ aperture: val });
+  
+  // Optimization: Temporary state for drag/input to avoid spamming history
+  const [tempCamera, setTempCamera] = useState<Coordinates | null>(null);
+  const [tempLight, setTempLight] = useState<Coordinates | null>(null);
+  const [tempPrompt, setTempPrompt] = useState<string>(prompt);
+
+  // Sync temp prompt when history changes (undo/redo)
+  useEffect(() => {
+    setTempPrompt(prompt);
+  }, [prompt]);
+
+  // Commit handlers
+  const commitCamera = () => {
+    if (tempCamera) {
+      pushToHistory({ camera: tempCamera });
+      setTempCamera(null);
+    }
+  };
+  const commitLight = () => {
+    if (tempLight) {
+      pushToHistory({ light: tempLight });
+      setTempLight(null);
+    }
+  };
+  const commitPrompt = () => {
+    if (tempPrompt !== prompt) {
+      pushToHistory({ prompt: tempPrompt });
+    }
+  };
+
   // Agent State
   const [isAgentThinking, setIsAgentThinking] = useState(false);
   
@@ -35,24 +127,21 @@ export default function App() {
   const [renderedImage, setRenderedImage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Recalculate JSON whenever positions or params change
-  useEffect(() => {
-    const data = calculateFiboParams(cameraPos, lightPos, prompt, aperture);
-    setFiboData(data);
-  }, [cameraPos, lightPos, prompt, aperture]);
-
   // Handler: Gemini Director
   const handleAgentAction = async () => {
-    if (!prompt) return;
+    if (!tempPrompt) return;
     setIsAgentThinking(true);
-    
+    commitPrompt(); // Ensure prompt is saved before action
+
     // Call Gemini
-    const result = await getDirectorCoordinates(prompt, cameraPos, lightPos);
+    const result = await getDirectorCoordinates(tempPrompt, cameraPos, lightPos);
     
     if (result) {
-      // Smoothly update positions (Framer motion in StudioCanvas will handle the animation)
-      setCameraPos(result.camera);
-      setLightPos(result.light);
+      // Commit the new agent state to history
+      pushToHistory({
+        camera: result.camera,
+        light: result.light
+      });
     }
     
     setIsAgentThinking(false);
@@ -84,18 +173,28 @@ export default function App() {
         data={fiboData} 
         aperture={aperture}
         setAperture={setAperture}
+        filters={filters}
+        setFilters={(f) => pushToHistory({ filters: f })}
       />
       
       {/* Center: Main Studio Canvas */}
       <main className="flex-1 relative h-full flex flex-col">
         {/* Top Header */}
         <div className="absolute top-0 left-0 w-full p-4 z-20 pointer-events-none flex justify-between items-start">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tighter text-white drop-shadow-md">LUMINA</h1>
-            <p className="text-xs text-neutral-500 font-mono tracking-widest drop-shadow-md">SPATIAL PROMPTING INTERFACE</p>
+          <div className="ml-[100px] pointer-events-auto flex gap-2"> {/* Offset for 3D button */}
+             <div className="flex bg-neutral-900 border border-neutral-700 rounded-md overflow-hidden">
+                <button onClick={undo} disabled={historyIndex === 0} className="p-2 hover:bg-neutral-800 disabled:opacity-30 transition-colors" title="Undo (Ctrl+Z)">
+                  <Undo size={16} />
+                </button>
+                <div className="w-[1px] bg-neutral-800"></div>
+                <button onClick={redo} disabled={historyIndex === history.length - 1} className="p-2 hover:bg-neutral-800 disabled:opacity-30 transition-colors" title="Redo (Ctrl+Shift+Z)">
+                  <Redo size={16} />
+                </button>
+             </div>
           </div>
           
           <div className="text-right pointer-events-auto flex flex-col gap-2 items-end">
+             <h1 className="text-xl font-bold tracking-tighter text-white drop-shadow-md">LUMINA</h1>
              {!hasGeminiKey && (
                <div className="bg-red-900/50 border border-red-500 text-red-200 px-3 py-1 rounded text-xs backdrop-blur-md">
                  Missing Gemini API Key
@@ -119,17 +218,23 @@ export default function App() {
 
         <div className="flex-1 relative overflow-hidden">
           <StudioCanvas 
-            cameraPos={cameraPos} 
-            setCameraPos={setCameraPos}
-            lightPos={lightPos} 
-            setLightPos={setLightPos}
+            cameraPos={tempCamera || cameraPos} 
+            setCameraPos={setTempCamera}
+            lightPos={tempLight || lightPos} 
+            setLightPos={setTempLight}
+            onInteractionEnd={() => {
+              // We need to call the commits here. 
+              // Since DraggableIcon calls onDragEnd, StudioCanvas calls this.
+              commitCamera();
+              commitLight();
+            }}
           />
         </div>
         
         {/* Floating Controls */}
         <ControlPanel 
-          prompt={prompt}
-          setPrompt={setPrompt}
+          prompt={tempPrompt}
+          setPrompt={setTempPrompt}
           onAgentAction={handleAgentAction}
           isAgentThinking={isAgentThinking}
           onRender={handleRender}

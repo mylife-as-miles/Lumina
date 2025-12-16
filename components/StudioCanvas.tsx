@@ -4,7 +4,7 @@ import { Coordinates, SubjectType } from '../types';
 
 // Three.js Imports
 import * as THREE from 'three';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useFrame } from '@react-three/fiber';
 import { 
   OrbitControls, 
   TransformControls, 
@@ -168,18 +168,22 @@ const PropController = ({
   const meshRef = useRef<THREE.Group>(null);
   const [hovered, setHovered] = useState(false);
   const [isSelected, setIsSelected] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   
   // Mapping App Coords (X, Y=Depth, Z=Height) to Three (X, Y=Height, Z=Depth)
-  const threePos = new THREE.Vector3(position.x, position.z, position.y);
+  const targetThreePos = new THREE.Vector3(position.x, position.z, position.y);
   
-  // Update internal ref if prop changes externally
-  useEffect(() => {
-    if (meshRef.current) {
-      meshRef.current.position.set(position.x, position.z, position.y);
+  // Animation loop: Smoothly interpolate to target position unless dragging
+  useFrame((state, delta) => {
+    if (meshRef.current && !isDragging) {
+      // Lerp for smooth animation when coordinates update externally (e.g. AI Agent)
+      meshRef.current.position.lerp(targetThreePos, 6 * delta);
+      // Ensure the prop faces the "stage"
       meshRef.current.lookAt(0, position.z * 0.5, 0); 
     }
-  }, [position.x, position.y, position.z]);
+  });
 
+  // Handle snapping logic
   const SNAP_THRESHOLD = 10;
   const SNAP_GRID = 50;
 
@@ -191,9 +195,11 @@ const PropController = ({
       showX={isSelected} showY={isSelected} showZ={isSelected}
       size={0.8}
       onMouseDown={() => {
+        setIsDragging(true);
         if (onDragStart) onDragStart();
       }}
       onMouseUp={() => {
+        setIsDragging(false);
         if (onDragEnd) onDragEnd();
       }}
       onChange={(e) => {
@@ -212,18 +218,18 @@ const PropController = ({
             if (Math.abs(z) < SNAP_THRESHOLD) z = 0;
             else if (Math.abs(z % SNAP_GRID) < SNAP_THRESHOLD) z = Math.round(z / SNAP_GRID) * SNAP_GRID;
 
-            // Apply snap visual to position (optional: might jitter)
-            // But for state update, we definitely send snapped values
-            
             // Sync back: Three(X, Y, Z) -> App(X, Z, Y)
             onDrag({ x: x, y: z, z: y });
-            meshRef.current.lookAt(0, y * 0.5, 0);
+            
+            // Note: We don't manually set meshRef.current.position here because 
+            // TransformControls does it. We just sync the data up.
           }
       }}
     >
       <group 
         ref={meshRef} 
-        position={threePos} 
+        // Initial position set, but useFrame handles updates
+        position={[position.x, position.z, position.y]}
         onClick={(e) => { e.stopPropagation(); setIsSelected(!isSelected); }}
         onPointerOver={() => setHovered(true)}
         onPointerOut={() => setHovered(false)}

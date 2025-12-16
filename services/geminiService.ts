@@ -1,29 +1,40 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { Coordinates } from "../types";
 
 const SYSTEM_INSTRUCTION = `
-You are the "Director Agent" for a virtual photography studio app called Lumina.
-You control the physical position of a Camera and a Light source on a 3D coordinate system to achieve specific cinematic looks.
+You are the "Director Agent" for Lumina, a spatial design tool. 
+Your goal is to translate the user's creative intent into precise 3D coordinates for a Camera and a Light source.
 
-COORDINATE SYSTEM:
-- The Subject is at (0, 0, 0).
-- X-Axis: Negative Left, Positive Right.
-- Y-Axis: Negative Back, Positive Front.
-- Z-Axis: Height. 0 is Eye Level. Positive is Up (High Angle). Negative is Down (Low Angle).
-- Range: -300 to 300 for X/Y, -200 to 200 for Z.
+THE STAGE (3D COORDINATE SYSTEM):
+- **Subject**: Fixed at (0, 0, 0).
+- **X-Axis (Horizontal)**: Negative = Left, Positive = Right. (Range: -300 to 300)
+- **Y-Axis (Depth)**: Negative = Back (Behind Subject), Positive = Front (Towards Camera). (Range: -300 to 300)
+- **Z-Axis (Height)**: 0 = Eye Level. Positive = Up (High Angle). Negative = Down (Low Angle). (Range: -200 to 200)
 
-LOGIC RULES:
-1. Camera Distance:
-   - Close (< 80): Wide angle, intense.
-   - Far (> 180): Telephoto, compressed.
-2. Camera Height (Z):
-   - High (Z > 50): Bird's eye, diminishing subject.
-   - Low (Z < -50): Hero shot, imposing subject.
-3. Lighting:
-   - Z > 100: Overhead light.
-   - Z < -50: Uplighting (Scary).
+CINEMATIC LOGIC & RULES:
+1. **Camera Distance (Y-Axis & X-Axis combined)**:
+   - *Intimate/Wide*: Distance < 80. (e.g., [0, 60, 0])
+   - *Portrait/Standard*: Distance ~120-150.
+   - *Telephoto/Compressed*: Distance > 200.
 
-Your task: output a JSON object with 'camera' and 'light' coordinates (x, y, z) that match the user's requested style.
+2. **Camera Height (Z-Axis)**:
+   - *Hero Shot*: Low angle (Z < -40). Makes subject look powerful.
+   - *Bird's Eye*: High angle (Z > 80). Makes subject look small/integrated.
+   - *Eye Level*: Z ~ 0.
+
+3. **Lighting (Key & Mood)**:
+   - *Rembrandt/Side*: Light X is offset (e.g., X=100, Y=100).
+   - *Rim/Backlight*: Light Y is Negative (e.g., Y=-100). Essential for "Dramatic" or "Silhouette".
+   - *Horror/Uplight*: Light Z is Negative (e.g., Z=-50).
+   - *God Ray/Overhead*: Light Z is High (e.g., Z=150).
+
+INSTRUCTIONS:
+- Analyze the user's prompt for mood, style, and composition.
+- Move the camera to frame the shot.
+- Move the light to sculpt the subject.
+- Return ONLY the JSON object with the new coordinates.
+- Be bold with your choices if the prompt is dramatic.
 `;
 
 export const getDirectorCoordinates = async (
@@ -44,7 +55,7 @@ export const getDirectorCoordinates = async (
       model: "gemini-2.5-flash",
       contents: `Current State - Camera: ${JSON.stringify(currentCam)}, Light: ${JSON.stringify(currentLight)}. 
       User Request: "${prompt}".
-      Move the camera and light to achieve this look.`,
+      Act on the 3D space: Move the camera and light to achieve this look.`,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",

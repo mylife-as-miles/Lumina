@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { StudioCanvas } from './components/StudioCanvas';
 import { MatrixView } from './components/MatrixView';
@@ -6,7 +7,7 @@ import { Coordinates, FiboPrompt, RenderResult, StudioState, SavedScene, Subject
 import { calculateFiboParams } from './spatial-math';
 import { getDirectorCoordinates } from './services/geminiService';
 import { generateImage } from './services/replicateService';
-import { Download, X, Undo, Redo, Menu, Grid as GridIcon } from 'lucide-react';
+import { Download, X, Undo, Redo, Menu, Grid as GridIcon, Loader2, AlertCircle } from 'lucide-react';
 
 // Initial Positions
 const INITIAL_CAMERA: Coordinates = { x: 0, y: 150, z: 0 }; 
@@ -202,6 +203,8 @@ export default function App() {
     commitPrompt();
     setRenderStatus('generating');
     setErrorMessage(null);
+    setRenderedImage(null); // Clear previous image
+    
     try {
       const imageUrl = await generateImage(fiboData, replicateKey);
       setRenderedImage(imageUrl);
@@ -209,7 +212,7 @@ export default function App() {
     } catch (e: any) {
       console.error(e);
       setRenderStatus('error');
-      setErrorMessage(e.message || "Rendering failed");
+      setErrorMessage(e.message || "Rendering failed. Please check your API key and try again.");
     }
   };
 
@@ -319,9 +322,12 @@ export default function App() {
 
         {/* Error Notification */}
         {renderStatus === 'error' && errorMessage && (
-           <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[60] bg-red-900/90 border border-red-500 text-white px-6 py-3 rounded shadow-xl flex items-center gap-4 w-[90%] md:w-auto text-sm md:text-base">
-             <span className="truncate">{errorMessage}</span>
-             <button onClick={() => setRenderStatus('idle')}><X size={16}/></button>
+           <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[60] bg-red-900/95 border border-red-500 text-white px-6 py-4 rounded shadow-xl flex flex-col gap-2 w-[90%] max-w-2xl backdrop-blur-md">
+             <div className="flex justify-between items-start">
+                <span className="font-bold flex items-center gap-2 text-red-300"><AlertCircle size={18}/> Rendering Failed</span>
+                <button onClick={() => setRenderStatus('idle')} className="hover:text-red-200 p-1"><X size={16}/></button>
+             </div>
+             <pre className="text-xs md:text-sm font-mono whitespace-pre-wrap text-red-100/80 overflow-auto max-h-40">{errorMessage}</pre>
            </div>
         )}
 
@@ -351,33 +357,76 @@ export default function App() {
       </main>
 
       {/* Render Result Overlay */}
-      {renderedImage && (
+      {(renderedImage || renderStatus === 'generating') && (
         <div className="absolute inset-0 z-[70] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 md:p-8">
-          <div className="relative bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl w-full max-w-4xl max-h-full flex flex-col">
-            <div className="p-4 border-b border-neutral-800 flex justify-between items-center">
-              <h3 className="font-mono text-white text-sm md:text-base">RENDER_OUTPUT_001</h3>
-              <button onClick={() => setRenderedImage(null)} className="text-neutral-500 hover:text-white">
+          <div className="relative bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl w-full max-w-4xl max-h-full flex flex-col overflow-hidden">
+            {/* Overlay Header */}
+            <div className="p-4 border-b border-neutral-800 flex justify-between items-center bg-neutral-900">
+              <h3 className="font-mono text-white text-sm md:text-base flex items-center gap-2">
+                {renderStatus === 'generating' ? (
+                   <span className="text-studio-accent animate-pulse">● RENDERING_IN_PROGRESS</span>
+                ) : (
+                   <span className="text-white">RENDER_OUTPUT_001</span>
+                )}
+              </h3>
+              <button 
+                onClick={() => { setRenderedImage(null); setRenderStatus('idle'); }} 
+                className="text-neutral-500 hover:text-white transition-colors"
+                title="Close"
+              >
                 <X size={24} />
               </button>
             </div>
             
-            <div className="p-2 bg-black flex-1 overflow-hidden flex items-center justify-center">
-              <img src={renderedImage} alt="Generated Output" className="max-w-full max-h-[60vh] md:max-h-[70vh] object-contain rounded" />
+            {/* Overlay Content / Image */}
+            <div className="p-2 bg-black flex-1 overflow-hidden flex items-center justify-center relative min-h-[300px]">
+              {renderStatus === 'generating' ? (
+                 <div className="flex flex-col items-center gap-6 opacity-70">
+                    <div className="relative">
+                      <div className="absolute inset-0 bg-studio-accent/20 blur-xl rounded-full animate-pulse"></div>
+                      <Loader2 size={64} className="animate-spin text-studio-accent relative z-10" />
+                    </div>
+                    <div className="flex flex-col items-center gap-1">
+                      <p className="text-white font-mono text-sm tracking-widest">GENERATING IMAGE</p>
+                      <p className="text-neutral-500 text-xs">Waiting for Replicate API...</p>
+                    </div>
+                 </div>
+              ) : (
+                 renderedImage && (
+                   <img 
+                     src={renderedImage} 
+                     alt="Generated Output" 
+                     className="max-w-full max-h-[60vh] md:max-h-[70vh] object-contain rounded shadow-2xl" 
+                   />
+                 )
+              )}
             </div>
             
-            <div className="p-4 border-t border-neutral-800 flex justify-between items-center bg-neutral-900">
+            {/* Overlay Footer */}
+            <div className="p-4 border-t border-neutral-800 flex flex-col md:flex-row justify-between items-center bg-neutral-900 gap-4">
                <div className="text-xs text-neutral-500 font-mono hidden md:block">
                  {fiboData.structured_prompt.photographic_characteristics.lens_focal_length} | {fiboData.structured_prompt.photographic_characteristics.depth_of_field}
                </div>
-               <a 
-                 href={renderedImage} 
-                 download="lumina-render.jpg"
-                 target="_blank"
-                 rel="noreferrer"
-                 className="flex items-center gap-2 bg-studio-accent text-black px-4 py-2 rounded text-sm font-bold hover:brightness-110 w-full md:w-auto justify-center"
-               >
-                 <Download size={16} /> Download
-               </a>
+               
+               {renderStatus === 'complete' && renderedImage && (
+                 <div className="flex gap-3 w-full md:w-auto">
+                    <button 
+                       onClick={() => { setRenderedImage(null); setRenderStatus('idle'); }}
+                       className="flex-1 md:flex-none px-6 py-2 rounded text-sm font-bold border border-neutral-700 text-neutral-300 hover:bg-neutral-800 hover:text-white transition-colors"
+                    >
+                      Close
+                    </button>
+                    <a 
+                      href={renderedImage} 
+                      download="lumina-render.jpg"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-studio-accent text-black px-6 py-2 rounded text-sm font-bold hover:bg-cyan-300 hover:shadow-[0_0_15px_rgba(0,240,255,0.4)] transition-all"
+                    >
+                      <Download size={16} /> Download
+                    </a>
+                 </div>
+               )}
             </div>
           </div>
         </div>

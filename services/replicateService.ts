@@ -11,8 +11,6 @@ export const generateImage = async (params: FiboPrompt, apiKey: string): Promise
   }
 
   const modelEndpoint = "https://api.replicate.com/v1/models/bria/fibo/predictions";
-  
-  // Cache busting for the initial request isn't strictly necessary but good practice
   const url = `${PROXY}${encodeURIComponent(modelEndpoint)}`;
 
   const sp = params.structured_prompt;
@@ -79,9 +77,10 @@ export const generateImage = async (params: FiboPrompt, apiKey: string): Promise
     
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    // CRITICAL FIX: Add timestamp to the UPSTREAM URL to bust the proxy cache.
-    // If we don't do this, corsproxy.io often returns the cached 'processing' response repeatedly.
-    const urlWithCacheBust = `${pollUrl}${pollUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
+    // CRITICAL FIX: Aggressive Cache Busting
+    // We add both a timestamp AND a random nonce to ensure the proxy always fetches fresh data.
+    const separator = pollUrl.includes('?') ? '&' : '?';
+    const urlWithCacheBust = `${pollUrl}${separator}t=${Date.now()}&nonce=${Math.random().toString(36).substring(7)}`;
     const proxiedPollUrl = `${PROXY}${encodeURIComponent(urlWithCacheBust)}`;
 
     try {
@@ -89,7 +88,8 @@ export const generateImage = async (params: FiboPrompt, apiKey: string): Promise
         headers: {
           "Authorization": `Token ${apiKey}`,
           "Content-Type": "application/json",
-          "Cache-Control": "no-cache"
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+          "Pragma": "no-cache"
         },
       });
 

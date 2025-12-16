@@ -14,7 +14,8 @@ import {
   Text,
   Float,
   Box,
-  Cylinder
+  Cylinder,
+  Billboard
 } from '@react-three/drei';
 
 // --- TYPE DECLARATION FIX ---
@@ -265,29 +266,29 @@ const PropController = ({
             </mesh>
           )}
 
-          <Text 
-            position={[0, 25, 0]} 
-            fontSize={6} 
-            color="white" 
-            anchorX="center" 
-            anchorY="middle"
-            billboard
-            font="https://fonts.gstatic.com/s/roboto/v18/KFOmCnqEu92Fr1Mu4mxM.woff"
-          >
-            {label}
-          </Text>
+          <Billboard position={[0, 25, 0]}>
+            <Text 
+              fontSize={6} 
+              color="white" 
+              anchorX="center" 
+              anchorY="middle"
+              font="https://fonts.gstatic.com/s/roboto/v18/KFOmCnqEu92Fr1Mu4mxM.woff"
+            >
+              {label}
+            </Text>
+          </Billboard>
           
           {(hovered || isSelected) && (
-            <Text 
-              position={[0, 16, 0]} 
-              fontSize={3} 
-              color="#888" 
-              anchorX="center" 
-              anchorY="middle" 
-              billboard
-            >
-              {Math.round(position.x)}, {Math.round(position.y)}, {Math.round(position.z)}
-            </Text>
+            <Billboard position={[0, 16, 0]}>
+              <Text 
+                fontSize={3} 
+                color="#888" 
+                anchorX="center" 
+                anchorY="middle" 
+              >
+                {Math.round(position.x)}, {Math.round(position.y)}, {Math.round(position.z)}
+              </Text>
+            </Billboard>
           )}
         </group>
       </group>

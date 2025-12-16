@@ -2,27 +2,56 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { StudioCanvas } from './components/StudioCanvas';
 import { MatrixView } from './components/MatrixView';
 import { ControlPanel } from './components/ControlPanel';
-import { Coordinates, FiboPrompt, RenderResult, StudioState } from './types';
+import { Coordinates, FiboPrompt, RenderResult, StudioState, SavedScene, SubjectType, PostProcessing } from './types';
 import { calculateFiboParams } from './spatial-math';
 import { getDirectorCoordinates } from './services/geminiService';
 import { generateImage } from './services/replicateService';
-import { Download, X, Undo, Redo, Menu } from 'lucide-react';
+import { Download, X, Undo, Redo, Menu, Grid as GridIcon } from 'lucide-react';
 
 // Initial Positions
-const INITIAL_CAMERA: Coordinates = { x: 0, y: 150, z: 0 }; // Front, Medium distance, Eye Level
-const INITIAL_LIGHT: Coordinates = { x: 100, y: -100, z: 20 }; // Right, Back, slightly elevated
+const INITIAL_CAMERA: Coordinates = { x: 0, y: 150, z: 0 }; 
+const INITIAL_LIGHT: Coordinates = { x: 100, y: -100, z: 20 }; 
+
+const INITIAL_STATE: StudioState = {
+  camera: INITIAL_CAMERA,
+  light: INITIAL_LIGHT,
+  aperture: "f/5.6",
+  prompt: "",
+  filters: [],
+  postProcessing: { bloom: 0, glare: 0, distortion: 0 },
+  subjectType: 'person'
+};
 
 export default function App() {
-  // --- STATE WITH HISTORY ---
-  const [history, setHistory] = useState<StudioState[]>([
-    {
-      camera: INITIAL_CAMERA,
-      light: INITIAL_LIGHT,
-      aperture: "f/5.6",
-      prompt: "",
-      filters: []
+  // --- API KEY MANAGEMENT ---
+  const [geminiKey, setGeminiKey] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('LUMINA_GEMINI_KEY') || process.env.API_KEY || '';
     }
-  ]);
+    return process.env.API_KEY || '';
+  });
+  
+  const [replicateKey, setReplicateKey] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('LUMINA_REPLICATE_KEY') || 
+             process.env.REPLICATE_API_TOKEN || 
+             process.env.NEXT_PUBLIC_REPLICATE_API_TOKEN || '';
+    }
+    return process.env.REPLICATE_API_TOKEN || '';
+  });
+
+  const handleSetGeminiKey = (key: string) => {
+    setGeminiKey(key);
+    localStorage.setItem('LUMINA_GEMINI_KEY', key);
+  };
+
+  const handleSetReplicateKey = (key: string) => {
+    setReplicateKey(key);
+    localStorage.setItem('LUMINA_REPLICATE_KEY', key);
+  };
+
+  // --- STATE WITH HISTORY ---
+  const [history, setHistory] = useState<StudioState[]>([INITIAL_STATE]);
   const [historyIndex, setHistoryIndex] = useState(0);
 
   // Helper to get current state
@@ -34,22 +63,41 @@ export default function App() {
   const aperture = currentState.aperture;
   const prompt = currentState.prompt;
   const filters = currentState.filters;
+  const postProcessing = currentState.postProcessing;
+  const subjectType = currentState.subjectType;
 
-  // Mobile Menu State
+  // UI State
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [activeGuide, setActiveGuide] = useState<'none' | 'thirds' | 'golden' | 'center'>('none');
+  const [savedScenes, setSavedScenes] = useState<SavedScene[]>([]);
+
+  // Load scenes from LocalStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('lumina_scenes');
+    if (saved) {
+      try {
+        setSavedScenes(JSON.parse(saved));
+      } catch (e) {
+        console.error("Failed to load scenes", e);
+      }
+    }
+  }, []);
+
+  const saveSceneToStorage = (scenes: SavedScene[]) => {
+    setSavedScenes(scenes);
+    localStorage.setItem('lumina_scenes', JSON.stringify(scenes));
+  };
 
   // --- HISTORY MANAGEMENT ---
   const pushToHistory = useCallback((newState: Partial<StudioState>) => {
     const nextState = { ...currentState, ...newState };
     
-    // If we're not at the end of history, slice it off
-    const newHistory = history.slice(0, historyIndex + 1);
-    
-    // Only push if something actually changed (shallow check)
+    // Check deep equality (simple JSON check for now)
     if (JSON.stringify(nextState) !== JSON.stringify(currentState)) {
-      newHistory.push(nextState);
-      setHistory(newHistory);
-      setHistoryIndex(newHistory.length - 1);
+       const newHistory = history.slice(0, historyIndex + 1);
+       newHistory.push(nextState);
+       setHistory(newHistory);
+       setHistoryIndex(newHistory.length - 1);
     }
   }, [history, historyIndex, currentState]);
 
@@ -71,24 +119,22 @@ export default function App() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [historyIndex, history]); // Deps need to be here for closure access
+  }, [historyIndex, history]);
 
   // --- ACTIONS ---
-  // State setters that push to history (used for discreet updates like slider change)
   const setAperture = (val: string) => pushToHistory({ aperture: val });
   
-  // Optimization: Temporary state for drag/input to avoid spamming history
+  // Optimization: Temporary state for drag/input
   const [tempCamera, setTempCamera] = useState<Coordinates | null>(null);
   const [tempLight, setTempLight] = useState<Coordinates | null>(null);
   const [tempPrompt, setTempPrompt] = useState<string>(prompt);
 
-  // Sync temp prompt when history changes (undo/redo)
+  // Sync temp prompt when history changes
   useEffect(() => {
     setTempPrompt(prompt);
   }, [prompt]);
 
   // --- DERIVED FIBO DATA ---
-  // Initial empty state until effect runs
   const [fiboData, setFiboData] = useState<FiboPrompt>({
     prompt: "",
     structured_prompt: {
@@ -102,11 +148,10 @@ export default function App() {
     }
   });
   
-  // Recalculate JSON whenever current state OR TEMP PROMPT changes
   useEffect(() => {
-    const data = calculateFiboParams(cameraPos, lightPos, tempPrompt, aperture, filters);
+    const data = calculateFiboParams(cameraPos, lightPos, tempPrompt, aperture, filters, postProcessing, subjectType);
     setFiboData(data);
-  }, [cameraPos, lightPos, tempPrompt, aperture, filters]);
+  }, [cameraPos, lightPos, tempPrompt, aperture, filters, postProcessing, subjectType]);
 
   // Commit handlers
   const commitCamera = () => {
@@ -135,35 +180,30 @@ export default function App() {
   const [renderedImage, setRenderedImage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Handler: Gemini Director
+  // Agent Handler
   const handleAgentAction = async () => {
     if (!tempPrompt) return;
     setIsAgentThinking(true);
-    commitPrompt(); // Ensure prompt is saved before action
+    commitPrompt(); 
 
-    // Call Gemini
-    const result = await getDirectorCoordinates(tempPrompt, cameraPos, lightPos);
+    const result = await getDirectorCoordinates(tempPrompt, cameraPos, lightPos, geminiKey);
     
     if (result) {
-      // Commit the new agent state to history
       pushToHistory({
         camera: result.camera,
         light: result.light
       });
     }
-    
     setIsAgentThinking(false);
   };
 
-  // Handler: Render Image
+  // Render Handler
   const handleRender = async () => {
-    // Save the current prompt to history so Undo works later
     commitPrompt();
-    
     setRenderStatus('generating');
     setErrorMessage(null);
     try {
-      const imageUrl = await generateImage(fiboData);
+      const imageUrl = await generateImage(fiboData, replicateKey);
       setRenderedImage(imageUrl);
       setRenderStatus('complete');
     } catch (e: any) {
@@ -173,30 +213,65 @@ export default function App() {
     }
   };
 
-  const hasGeminiKey = !!process.env.API_KEY;
-  const hasReplicateKey = !!(process.env.REPLICATE_API_TOKEN || process.env.NEXT_PUBLIC_REPLICATE_API_TOKEN);
+  // Scene Handlers
+  const handleSaveScene = (name: string) => {
+    const newScene: SavedScene = {
+      id: Date.now().toString(),
+      name,
+      state: currentState,
+      createdAt: Date.now()
+    };
+    saveSceneToStorage([...savedScenes, newScene]);
+  };
+
+  const handleLoadScene = (scene: SavedScene) => {
+    pushToHistory(scene.state);
+  };
+
+  const handleDeleteScene = (id: string) => {
+    saveSceneToStorage(savedScenes.filter(s => s.id !== id));
+  };
+
+  // Key Warning Logic
+  const hasGeminiKey = !!geminiKey;
+  const hasReplicateKey = !!replicateKey;
 
   return (
     <div className="flex h-[100dvh] w-full bg-studio-bg text-white font-sans overflow-hidden">
       
-      {/* Left Sidebar: Matrix View (JSON) */}
+      {/* Matrix View */}
       <MatrixView 
         data={fiboData} 
         aperture={aperture}
         setAperture={setAperture}
         filters={filters}
         setFilters={(f) => pushToHistory({ filters: f })}
+        postProcessing={postProcessing}
+        setPostProcessing={(pp) => pushToHistory({ postProcessing: pp })}
+        subjectType={subjectType}
+        setSubjectType={(t) => pushToHistory({ subjectType: t })}
+        
+        savedScenes={savedScenes}
+        onSaveScene={handleSaveScene}
+        onLoadScene={handleLoadScene}
+        onDeleteScene={handleDeleteScene}
+
+        geminiKey={geminiKey}
+        setGeminiKey={handleSetGeminiKey}
+        replicateKey={replicateKey}
+        setReplicateKey={handleSetReplicateKey}
+
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
       />
       
-      {/* Center: Main Studio Canvas */}
+      {/* Main Canvas Area */}
       <main className="flex-1 relative h-full flex flex-col">
         {/* Top Header */}
         <div className="absolute top-0 left-0 w-full p-4 z-50 pointer-events-none flex justify-between items-start">
           <div className="ml-0 md:ml-[100px] pointer-events-auto flex gap-2 items-center">
              
-             {/* Mobile Menu Button */}
+             {/* Mobile Menu */}
              <button 
                className="md:hidden p-2 bg-neutral-900 border border-neutral-700 rounded text-white hover:bg-neutral-800"
                onClick={() => setIsSidebarOpen(true)}
@@ -214,18 +289,29 @@ export default function App() {
                   <Redo size={16} />
                 </button>
              </div>
+
+             {/* Visual Guide Toggles */}
+             <div className="flex bg-neutral-900 border border-neutral-700 rounded-md overflow-hidden ml-2">
+                <button 
+                  onClick={() => setActiveGuide(activeGuide === 'none' ? 'thirds' : activeGuide === 'thirds' ? 'golden' : activeGuide === 'golden' ? 'center' : 'none')}
+                  className="p-2 hover:bg-neutral-800 transition-colors flex items-center gap-2 text-xs font-bold"
+                >
+                  <GridIcon size={16} className={activeGuide !== 'none' ? 'text-studio-accent' : 'text-neutral-500'} />
+                  <span className="hidden sm:inline">{activeGuide === 'none' ? 'GUIDES OFF' : activeGuide.toUpperCase()}</span>
+                </button>
+             </div>
           </div>
           
           <div className="text-right pointer-events-auto flex flex-col gap-2 items-end">
              <h1 className="text-xl font-bold tracking-tighter text-white drop-shadow-md">LUMINA</h1>
              {!hasGeminiKey && (
-               <div className="bg-red-900/50 border border-red-500 text-red-200 px-3 py-1 rounded text-xs backdrop-blur-md">
-                 Missing Gemini API Key
+               <div className="bg-red-900/50 border border-red-500 text-red-200 px-3 py-1 rounded text-xs backdrop-blur-md animate-pulse">
+                 Missing Gemini Key (Settings)
                </div>
              )}
              {!hasReplicateKey && (
                <div className="bg-yellow-900/50 border border-yellow-500 text-yellow-200 px-3 py-1 rounded text-xs backdrop-blur-md">
-                 Missing Replicate API Token
+                 Missing Replicate Token (Settings)
                </div>
              )}
           </div>
@@ -246,14 +332,13 @@ export default function App() {
             lightPos={tempLight || lightPos} 
             setLightPos={setTempLight}
             onInteractionEnd={() => {
-              // We need to call the commits here. 
-              // Since DraggableIcon calls onDragEnd, StudioCanvas calls this.
               commitCamera();
               commitLight();
             }}
+            subjectType={subjectType}
+            activeGuide={activeGuide}
           />
           
-          {/* Fixed Floating Controls - Now anchored inside the canvas container */}
           <ControlPanel 
             prompt={tempPrompt}
             setPrompt={setTempPrompt}

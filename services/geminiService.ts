@@ -1,11 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Coordinates } from "../types";
 
-// Safety check for API Key
-const API_KEY = process.env.API_KEY || '';
-
-const ai = new GoogleGenAI({ apiKey: API_KEY });
-
 const SYSTEM_INSTRUCTION = `
 You are the "Director Agent" for a virtual photography studio app called Lumina.
 You control the physical position of a Camera and a Light source on a 3D coordinate system to achieve specific cinematic looks.
@@ -34,12 +29,15 @@ Your task: output a JSON object with 'camera' and 'light' coordinates (x, y, z) 
 export const getDirectorCoordinates = async (
   prompt: string, 
   currentCam: Coordinates, 
-  currentLight: Coordinates
+  currentLight: Coordinates,
+  apiKey: string
 ): Promise<{ camera: Coordinates; light: Coordinates } | null> => {
-  if (!API_KEY) {
+  if (!apiKey) {
     console.error("Gemini API Key is missing.");
     return null;
   }
+
+  const ai = new GoogleGenAI({ apiKey });
 
   try {
     const response = await ai.models.generateContent({

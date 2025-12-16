@@ -1,3 +1,4 @@
+
 export interface Coordinates {
   x: number;
   y: number;
@@ -36,12 +37,29 @@ export interface FiboPrompt {
   };
 }
 
+export type SubjectType = 'person' | 'car' | 'building';
+
+export interface PostProcessing {
+  bloom: number; // 0-100
+  glare: number; // 0-100
+  distortion: number; // 0-100
+}
+
+export interface SavedScene {
+  id: string;
+  name: string;
+  state: StudioState;
+  createdAt: number;
+}
+
 export interface StudioState {
   camera: Coordinates;
   light: Coordinates;
   aperture: string;
   prompt: string;
   filters: string[];
+  postProcessing: PostProcessing;
+  subjectType: SubjectType;
 }
 
 export interface RenderResult {
@@ -57,7 +75,6 @@ export enum StudioMode {
 
 export const AVAILABLE_FILTERS = [
   "Film Grain",
-  "Soft Bloom",
   "Cinematic Color Grading",
   "Vignette",
   "Motion Blur",

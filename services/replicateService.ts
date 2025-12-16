@@ -4,11 +4,7 @@ import { FiboPrompt } from "../types";
 // Note: In a production Next.js app, this should be a Server Action or API Route.
 const PROXY = "https://corsproxy.io/?";
 
-export const generateImage = async (params: FiboPrompt): Promise<string> => {
-  // STRICTLY use Replicate tokens.
-  const apiKey = process.env.REPLICATE_API_TOKEN || 
-                 process.env.NEXT_PUBLIC_REPLICATE_API_TOKEN;
-  
+export const generateImage = async (params: FiboPrompt, apiKey: string): Promise<string> => {
   if (!apiKey) {
     throw new Error("Missing Replicate API Token.");
   }

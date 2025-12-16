@@ -1,4 +1,5 @@
-import { Coordinates, FiboPrompt } from './types';
+
+import { Coordinates, FiboPrompt, PostProcessing, SubjectType } from './types';
 
 /**
  * Calculates the High-Quality Structured Prompt based on spatial coordinates.
@@ -8,7 +9,9 @@ export const calculateFiboParams = (
   light: Coordinates, 
   userPrompt: string,
   apertureVal: string = "f/5.6",
-  filters: string[] = []
+  filters: string[] = [],
+  postProcessing: PostProcessing = { bloom: 0, glare: 0, distortion: 0 },
+  subjectType: SubjectType = 'person'
 ): FiboPrompt => {
   
   // Convert filters to a Set for easier lookup
@@ -45,7 +48,11 @@ export const calculateFiboParams = (
   if (activeFilters.has("Vignette")) lens += ", Heavy Vignette";
   if (activeFilters.has("Chromatic Aberration")) lens += ", Chromatic Aberration";
   if (activeFilters.has("Motion Blur")) focusStr = "Motion Blur, Kinetic Energy";
-  if (activeFilters.has("Soft Bloom")) focusStr += ", Soft Focus, Dreamy Haze";
+  
+  // Post Processing Integration
+  if (postProcessing.bloom > 20) focusStr += ", Soft Bloom, Dreamy Glow";
+  if (postProcessing.glare > 20) focusStr += ", Lens Flare, Specular Highlights";
+  if (postProcessing.distortion > 20) lens += ", Barrel Distortion, Lens Curvature";
 
   // --- 2. Lighting Logic ---
   const lightDist = Math.sqrt(light.x ** 2 + light.y ** 2);
@@ -102,8 +109,12 @@ export const calculateFiboParams = (
   if (lightDir.includes("Under")) colorScheme = "Moody / Cool Tones";
 
   // --- 4. Subject/Objects ---
-  // Parsing user prompt to extract subject if possible, otherwise generic
-  const description = userPrompt || "A subject";
+  let description = userPrompt;
+  if (!description) {
+      if (subjectType === 'car') description = "A sleek modern sports car";
+      else if (subjectType === 'building') description = "A modern architectural structure";
+      else description = "A portrait of a person";
+  }
   
   // View/Pose relative to camera
   let pose = "Facing Camera";
@@ -137,7 +148,7 @@ export const calculateFiboParams = (
       },
       objects: [
         {
-          description: "Main Subject",
+          description: subjectType === 'person' ? "Main Subject" : description,
           location: "Center",
           action_pose: pose,
           appearance_details: "Detailed texture, high quality"

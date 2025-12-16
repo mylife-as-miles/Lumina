@@ -11,6 +11,8 @@ export const generateImage = async (params: FiboPrompt, apiKey: string): Promise
   }
 
   const modelEndpoint = "https://api.replicate.com/v1/models/bria/fibo/predictions";
+  
+  // Cache busting for the initial request isn't strictly necessary but good practice
   const url = `${PROXY}${encodeURIComponent(modelEndpoint)}`;
 
   const sp = params.structured_prompt;
@@ -28,6 +30,7 @@ export const generateImage = async (params: FiboPrompt, apiKey: string): Promise
   `.replace(/\s+/g, ' ').trim();
 
   // 1. Initiate Prediction
+  console.log("Starting Replicate prediction...");
   const createResponse = await fetch(url, {
     method: "POST",
     headers: {
@@ -56,29 +59,52 @@ export const generateImage = async (params: FiboPrompt, apiKey: string): Promise
   }
 
   let prediction = await createResponse.json();
+  console.log("Prediction initialized:", prediction.id);
   
   // 2. Poll for Completion
-  const pollUrl = prediction.urls.get;
+  const pollUrl = prediction.urls?.get;
   
+  if (!pollUrl) {
+    throw new Error("Replicate API did not return a polling URL.");
+  }
+  
+  let attempts = 0;
+  const MAX_ATTEMPTS = 60; // 60 seconds roughly
+
   while (prediction.status !== "succeeded" && prediction.status !== "failed" && prediction.status !== "canceled") {
+    if (attempts >= MAX_ATTEMPTS) {
+       throw new Error("Prediction timed out (60s limit).");
+    }
+    attempts++;
+    
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    const proxiedPollUrl = `${PROXY}${encodeURIComponent(pollUrl)}`;
+    // CRITICAL FIX: Add timestamp to the UPSTREAM URL to bust the proxy cache.
+    // If we don't do this, corsproxy.io often returns the cached 'processing' response repeatedly.
+    const urlWithCacheBust = `${pollUrl}${pollUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
+    const proxiedPollUrl = `${PROXY}${encodeURIComponent(urlWithCacheBust)}`;
+
     try {
       const pollResponse = await fetch(proxiedPollUrl, {
         headers: {
           "Authorization": `Token ${apiKey}`,
           "Content-Type": "application/json",
+          "Cache-Control": "no-cache"
         },
       });
 
       if (!pollResponse.ok) {
-         // If polling fails temporarily (e.g. 502/503), log and retry instead of crashing
          console.warn(`Polling status check failed: ${pollResponse.status}`);
          continue; 
       }
       
-      prediction = await pollResponse.json();
+      const updatedPrediction = await pollResponse.json();
+      
+      // Ensure we actually got a valid object back before overwriting
+      if (updatedPrediction && updatedPrediction.status) {
+        prediction = updatedPrediction;
+        console.log(`Polling attempt ${attempts}: ${prediction.status}`);
+      }
     } catch (e) {
       console.warn("Polling network error", e);
       // Continue polling loop despite network hiccup
@@ -91,12 +117,12 @@ export const generateImage = async (params: FiboPrompt, apiKey: string): Promise
 
   // 3. Robust Output Handling
   const output = prediction.output;
+  console.log("Generation complete. Output:", output);
   
   if (!output) {
     throw new Error("Generation succeeded but no output URL was returned by the model.");
   }
 
   // Replicate models can return a single string or an array of strings. 
-  // Bria FIBO often returns a single string.
   return Array.isArray(output) ? output[0] : output;
 };

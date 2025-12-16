@@ -180,6 +180,7 @@ export default function App() {
   const [renderStatus, setRenderStatus] = useState<RenderResult['status']>('idle');
   const [renderedImage, setRenderedImage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   // Agent Handler
   const handleAgentAction = async () => {
@@ -213,6 +214,28 @@ export default function App() {
       console.error(e);
       setRenderStatus('error');
       setErrorMessage(e.message || "Rendering failed. Please check your API key and try again.");
+    }
+  };
+
+  // Download Handler
+  const handleDownload = async () => {
+    if (!renderedImage) return;
+    setIsDownloading(true);
+    try {
+      const response = await fetch(renderedImage);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `lumina-render-${Date.now()}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("Download failed", e);
+    } finally {
+      setIsDownloading(false);
     }
   };
 
@@ -322,12 +345,17 @@ export default function App() {
 
         {/* Error Notification */}
         {renderStatus === 'error' && errorMessage && (
-           <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[60] bg-red-900/95 border border-red-500 text-white px-6 py-4 rounded shadow-xl flex flex-col gap-2 w-[90%] max-w-2xl backdrop-blur-md">
+           <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[60] bg-red-900/95 border border-red-500 text-white px-6 py-4 rounded shadow-xl flex flex-col gap-2 w-[90%] max-w-3xl backdrop-blur-md">
              <div className="flex justify-between items-start">
-                <span className="font-bold flex items-center gap-2 text-red-300"><AlertCircle size={18}/> Rendering Failed</span>
+                <span className="font-bold flex items-center gap-2 text-red-300 uppercase tracking-wider text-sm"><AlertCircle size={18}/> Rendering Failed</span>
                 <button onClick={() => setRenderStatus('idle')} className="hover:text-red-200 p-1"><X size={16}/></button>
              </div>
-             <pre className="text-xs md:text-sm font-mono whitespace-pre-wrap text-red-100/80 overflow-auto max-h-40">{errorMessage}</pre>
+             <div className="bg-black/50 rounded p-3 mt-2 border border-red-900/50">
+                <pre className="text-xs font-mono whitespace-pre-wrap text-red-100/90 overflow-auto max-h-[50vh] break-all">{errorMessage}</pre>
+             </div>
+             <div className="text-[10px] text-red-400/60 font-mono">
+               Please check your API key, prompts, and connection.
+             </div>
            </div>
         )}
 
@@ -416,15 +444,14 @@ export default function App() {
                     >
                       Close
                     </button>
-                    <a 
-                      href={renderedImage} 
-                      download="lumina-render.jpg"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-studio-accent text-black px-6 py-2 rounded text-sm font-bold hover:bg-cyan-300 hover:shadow-[0_0_15px_rgba(0,240,255,0.4)] transition-all"
+                    <button 
+                      onClick={handleDownload}
+                      disabled={isDownloading}
+                      className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-studio-accent text-black px-6 py-2 rounded text-sm font-bold hover:bg-cyan-300 hover:shadow-[0_0_15px_rgba(0,240,255,0.4)] transition-all disabled:opacity-50 disabled:cursor-wait"
                     >
-                      <Download size={16} /> Download
-                    </a>
+                      {isDownloading ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                      {isDownloading ? 'Downloading...' : 'Download'}
+                    </button>
                  </div>
                )}
             </div>

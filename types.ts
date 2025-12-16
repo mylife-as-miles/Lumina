@@ -37,7 +37,7 @@ export interface FiboPrompt {
   };
 }
 
-export type SubjectType = 'person' | 'car' | 'building';
+export type SubjectType = 'person' | 'car' | 'building' | 'product' | 'furniture';
 
 export interface PostProcessing {
   bloom: number; // 0-100

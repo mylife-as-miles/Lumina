@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { FiboPrompt, AVAILABLE_FILTERS, PostProcessing, SavedScene, StudioState, SubjectType } from '../types';
 import { Code, Copy, Check, Sliders, Layers, Camera, Lightbulb, Palette, User, X, Save, Trash, Box, FolderOpen, Settings, Key } from 'lucide-react';
@@ -251,12 +252,12 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
 
               {/* Subject Select */}
               <SectionHeader icon={Box} title="Studio Model" />
-              <div className="flex gap-2 pl-1 mb-4">
-                 {(['person', 'car', 'building'] as SubjectType[]).map(t => (
+              <div className="flex flex-wrap gap-2 pl-1 mb-4">
+                 {(['person', 'car', 'building', 'product', 'furniture'] as SubjectType[]).map(t => (
                    <button 
                      key={t}
                      onClick={() => setSubjectType(t)}
-                     className={`px-3 py-1.5 rounded border capitalize transition-colors ${subjectType === t ? 'bg-studio-accent text-black border-studio-accent' : 'bg-transparent text-neutral-400 border-neutral-700 hover:border-neutral-500'}`}
+                     className={`px-3 py-1.5 rounded border capitalize transition-colors text-[10px] ${subjectType === t ? 'bg-studio-accent text-black border-studio-accent' : 'bg-transparent text-neutral-400 border-neutral-700 hover:border-neutral-500'}`}
                    >
                      {t}
                    </button>
@@ -392,4 +393,4 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
       </div>
     </>
   );
-};
+}

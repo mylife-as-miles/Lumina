@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect, Suspense } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, Suspense } from 'react';
 import { Coordinates, SubjectType } from '../types';
 
 // Three.js Imports
@@ -15,7 +15,8 @@ import {
   Float,
   Box,
   Cylinder,
-  Billboard
+  Billboard,
+  Sphere
 } from '@react-three/drei';
 
 // --- TYPE DECLARATION FIX ---
@@ -95,6 +96,40 @@ const SubjectModel = ({ type }: { type: SubjectType }) => {
             </Box>
           </group>
         )}
+
+        {type === 'product' && (
+          <group position={[0, 10, 0]}>
+             <Box args={[20, 30, 20]} position={[0, 15, 0]} castShadow receiveShadow>
+                <meshStandardMaterial color="#222" roughness={0.8} />
+             </Box>
+             <Cylinder args={[4, 4, 15]} position={[0, 38, 0]} castShadow>
+                <meshStandardMaterial color="#f0f" roughness={0.2} metalness={0.5} emissive="#303" />
+             </Cylinder>
+          </group>
+        )}
+
+        {type === 'furniture' && (
+           <group position={[0, 10, 0]} rotation={[0, -Math.PI/4, 0]}>
+              <Box args={[25, 2, 25]} position={[0, 10, 0]} castShadow receiveShadow>
+                 <meshStandardMaterial color="#850" roughness={0.6} />
+              </Box>
+              <Box args={[2, 20, 2]} position={[11, 0, 11]} castShadow>
+                 <meshStandardMaterial color="#111" />
+              </Box>
+              <Box args={[2, 20, 2]} position={[-11, 0, 11]} castShadow>
+                 <meshStandardMaterial color="#111" />
+              </Box>
+              <Box args={[2, 20, 2]} position={[11, 0, -11]} castShadow>
+                 <meshStandardMaterial color="#111" />
+              </Box>
+              <Box args={[2, 20, 2]} position={[-11, 0, -11]} castShadow>
+                 <meshStandardMaterial color="#111" />
+              </Box>
+              <Box args={[25, 25, 2]} position={[0, 22, -12]} castShadow receiveShadow>
+                 <meshStandardMaterial color="#850" roughness={0.6} />
+              </Box>
+           </group>
+        )}
       </Float>
       
       {/* Grounding Ring */}
@@ -173,11 +208,18 @@ const PropController = ({
   // Mapping App Coords (X, Y=Depth, Z=Height) to Three (X, Y=Height, Z=Depth)
   const targetThreePos = new THREE.Vector3(position.x, position.z, position.y);
   
+  // Set initial position once to avoid "flying in" effect from 0,0,0
+  useLayoutEffect(() => {
+    if (meshRef.current) {
+        meshRef.current.position.set(position.x, position.z, position.y);
+    }
+  }, []);
+
   // Animation loop: Smoothly interpolate to target position unless dragging
   useFrame((state, delta) => {
     if (meshRef.current && !isDragging) {
       // Lerp for smooth animation when coordinates update externally (e.g. AI Agent)
-      meshRef.current.position.lerp(targetThreePos, 6 * delta);
+      meshRef.current.position.lerp(targetThreePos, 10 * delta);
       // Ensure the prop faces the "stage"
       meshRef.current.lookAt(0, position.z * 0.5, 0); 
     }
@@ -211,25 +253,22 @@ const PropController = ({
             let y = p.y; // Height (Z in app)
             let z = p.z; // Depth (Y in app)
             
-            // Check snapping
-            if (Math.abs(x) < SNAP_THRESHOLD) x = 0;
-            else if (Math.abs(x % SNAP_GRID) < SNAP_THRESHOLD) x = Math.round(x / SNAP_GRID) * SNAP_GRID;
-            
-            if (Math.abs(z) < SNAP_THRESHOLD) z = 0;
-            else if (Math.abs(z % SNAP_GRID) < SNAP_THRESHOLD) z = Math.round(z / SNAP_GRID) * SNAP_GRID;
+            // Check snapping if grid is desired, otherwise raw
+            // if (Math.abs(x) < SNAP_THRESHOLD) x = 0;
+            // if (Math.abs(z) < SNAP_THRESHOLD) z = 0;
 
             // Sync back: Three(X, Y, Z) -> App(X, Z, Y)
+            // IMPORTANT: We update the React state, but we DO NOT pass the 'position' prop
+            // back to the <group> below to avoid fighting TransformControls during drag.
             onDrag({ x: x, y: z, z: y });
-            
-            // Note: We don't manually set meshRef.current.position here because 
-            // TransformControls does it. We just sync the data up.
           }
       }}
     >
       <group 
         ref={meshRef} 
-        // Initial position set, but useFrame handles updates
-        position={[position.x, position.z, position.y]}
+        // IMPORTANT: No 'position' prop here. 
+        // Initialization handled by useLayoutEffect.
+        // Updates handled by useFrame (when idle) or TransformControls (when dragging).
         onClick={(e) => { e.stopPropagation(); setIsSelected(!isSelected); }}
         onPointerOver={() => setHovered(true)}
         onPointerOut={() => setHovered(false)}

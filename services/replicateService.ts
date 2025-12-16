@@ -52,8 +52,9 @@ export const generateImage = async (params: FiboPrompt, apiKey: string): Promise
   });
 
   if (!createResponse.ok) {
+    // Return the FULL error message without truncation
     const errorText = await createResponse.text().catch(() => "Unknown error");
-    throw new Error(`Replicate API Error (${createResponse.status}): ${errorText.substring(0, 200)}`);
+    throw new Error(`Replicate API Error (${createResponse.status}): ${errorText}`);
   }
 
   let prediction = await createResponse.json();

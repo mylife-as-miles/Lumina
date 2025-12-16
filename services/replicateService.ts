@@ -1,3 +1,4 @@
+
 import { FiboPrompt } from "../types";
 
 // Use a CORS proxy to allow client-side requests to Replicate
@@ -63,20 +64,39 @@ export const generateImage = async (params: FiboPrompt, apiKey: string): Promise
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
     const proxiedPollUrl = `${PROXY}${encodeURIComponent(pollUrl)}`;
-    const pollResponse = await fetch(proxiedPollUrl, {
-      headers: {
-        "Authorization": `Token ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-    });
+    try {
+      const pollResponse = await fetch(proxiedPollUrl, {
+        headers: {
+          "Authorization": `Token ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+      });
 
-    if (!pollResponse.ok) break;
-    prediction = await pollResponse.json();
+      if (!pollResponse.ok) {
+         // If polling fails temporarily (e.g. 502/503), log and retry instead of crashing
+         console.warn(`Polling status check failed: ${pollResponse.status}`);
+         continue; 
+      }
+      
+      prediction = await pollResponse.json();
+    } catch (e) {
+      console.warn("Polling network error", e);
+      // Continue polling loop despite network hiccup
+    }
   }
 
   if (prediction.status !== "succeeded") {
     throw new Error(`Prediction ${prediction.status}: ${prediction.error || "Unknown error"}`);
   }
 
-  return Array.isArray(prediction.output) ? prediction.output[0] : prediction.output;
+  // 3. Robust Output Handling
+  const output = prediction.output;
+  
+  if (!output) {
+    throw new Error("Generation succeeded but no output URL was returned by the model.");
+  }
+
+  // Replicate models can return a single string or an array of strings. 
+  // Bria FIBO often returns a single string.
+  return Array.isArray(output) ? output[0] : output;
 };
